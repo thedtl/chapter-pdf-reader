@@ -1144,174 +1144,167 @@ See https://github.com/adobe-type-tools/cmap-resources
     <!-- outerContainer -->
     <div id="printContainer"></div>
 
-    <!-- DTL Chapter Restrictions (Hardened & Optimized) -->
-    <script>
-    (function() {
-        // ---------------------------------------------------------
-        // 1. SECURITY: REFERRER CHECK
-        // ---------------------------------------------------------
-        try {
-            const ALLOWED_HOSTS = [
-                "thedtl.org", "thedtl.github.io", "oclc.org", 
-                "libapps.com", "libguides.com", "springshare.com", 
-                "localhost", "127.0.0.1",
-                "ccrawford.workers.dev"
-            ];
-            
-            let referrer = document.referrer || "";
-            if (!referrer && window.location.ancestorOrigins && window.location.ancestorOrigins.length > 0) {
-                referrer = window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1];
+<!-- DTL Chapter Restrictions (Hardened CSS Injection + UI Cleanup) -->
+<script>
+(function() {
+    // 1. SECURITY: REFERRER CHECK
+    try {
+        const ALLOWED_HOSTS = [
+            "thedtl.org", "thedtl.github.io", "oclc.org", 
+            "libapps.com", "libguides.com", "springshare.com", 
+            "localhost", "127.0.0.1",
+            "ccrawford.workers.dev"
+        ];
+        
+        let referrer = document.referrer || "";
+        if (!referrer && window.location.ancestorOrigins && window.location.ancestorOrigins.length > 0) {
+            referrer = window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1];
+        }
+        
+        // Uncomment below to enforce strict security:
+        /*
+        const isAllowed = ALLOWED_HOSTS.some(host => referrer.includes(host));
+        if (!isAllowed) {
+            throw new Error("Access Denied");
+        }
+        */
+    } catch (e) {
+        document.body.innerHTML = `<h1 style="text-align:center;margin-top:50px;">Access Denied</h1>`;
+        window.stop();
+        throw e;
+    }
+
+    // 2. PDF.js INITIALIZATION & LOGIC
+    document.addEventListener('webviewerloaded', async function() {
+        const PDFViewerApplication = window.PDFViewerApplication;
+        
+        await PDFViewerApplication.initializedPromise;
+
+        // A. DISABLE DOWNLOAD/PRINT/OPEN
+        PDFViewerApplication.download = function() { console.log("Download disabled"); };
+        PDFViewerApplication.save = function() { console.log("Save disabled"); };
+        PDFViewerApplication.print = function() { console.log("Print disabled"); };
+        
+        window.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && ['s','p','o'].includes(e.key.toLowerCase())) {
+                e.preventDefault();
+                e.stopPropagation();
             }
-            
-            const isAllowed = ALLOWED_HOSTS.some(host => referrer.includes(host));
-            
-            if (!isAllowed) {
-                document.documentElement.innerHTML = `
-                    <body style="font-family:sans-serif;text-align:center;padding-top:50px;background:#f0f0f0;">
-                        <div style="background:#fff;padding:40px;margin:0 auto;max-width:500px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);">
-                            <h1 style="color:#d9534f;">Access Restricted</h1>
-                            <p>This content is only accessible via the Library website.</p>
-                        </div>
-                    </body>`;
-                window.stop();
-                throw new Error("Access Denied");
-            }
-        } catch (e) {
-            if (e.message === "Access Denied") window.stop();
-            throw e;
+        }, true);
+
+        document.addEventListener('contextmenu', e => e.preventDefault());
+
+        // B. PARSE URL PARAMS
+        const urlParams = new URLSearchParams(window.location.search);
+        if (!urlParams.has('start') || !urlParams.has('end')) {
+            console.log("No chapter params found. Showing full PDF.");
+            return;
         }
 
-        // ---------------------------------------------------------
-        // 2. PDF.js INITIALIZATION & LOGIC
-        // ---------------------------------------------------------
+        const reqStart = parseInt(urlParams.get('start'));
+        const reqEnd = parseInt(urlParams.get('end'));
+
+        try {
+            await PDFViewerApplication.pdfDocumentPromise;
+        } catch (error) {
+            console.error("PDF Failed to load:", error);
+            return;
+        }
         
-        document.addEventListener('webviewerloaded', async function() {
-            const PDFViewerApplication = window.PDFViewerApplication;
+        const totalPages = PDFViewerApplication.pdfDocument.numPages;
+        const startPage = Math.max(1, Math.min(reqStart, totalPages));
+        const endPage = Math.max(startPage, Math.min(reqEnd, totalPages));
+        const chapterLength = endPage - startPage + 1;
+
+        console.log(`[DTL] Restricting View: Pages ${startPage} to ${endPage}`);
+
+        // C. THE FIX: CSS INJECTION (Hide Pages + Hide Sidebar Button)
+        const styleSheet = document.createElement("style");
+        styleSheet.type = "text/css";
+        let cssRules = "";
+
+        // 1. Hide pages BEFORE the chapter
+        for (let i = 1; i < startPage; i++) {
+            cssRules += `.page[data-page-number="${i}"], .thumbnail[data-page-number="${i}"] { display: none !important; } \n`;
+        }
+
+        // 2. Hide pages AFTER the chapter
+        for (let i = endPage + 1; i <= totalPages; i++) {
+            cssRules += `.page[data-page-number="${i}"], .thumbnail[data-page-number="${i}"] { display: none !important; } \n`;
+        }
+
+        // 3. HIDE SIDEBAR & TOGGLE BUTTON (Updated)
+        cssRules += `#sidebarContainer { display: none !important; } \n`; // The actual sidebar
+        cssRules += `#sidebarToggle { display: none !important; } \n`;    // The button to open it
+        cssRules += `#viewBookmark { display: none !important; } \n`;     // The "Current View" button
+        
+        styleSheet.innerText = cssRules;
+        document.head.appendChild(styleSheet);
+
+        // D. UI VIRTUALIZATION
+        const numPagesEl = document.getElementById('numPages');
+        if (numPagesEl) {
+            numPagesEl.textContent = `of ${chapterLength}`;
+            numPagesEl.style.visibility = 'visible';
+        }
+
+        const pageInput = document.getElementById('pageNumber');
+        
+        const updatePageDisplay = () => {
+            const currentAbs = PDFViewerApplication.page;
             
-            // Wait for the app to initialize
-            await PDFViewerApplication.initializedPromise;
-
-            // --- A. NEUTER INTERNAL COMMANDS ---
-            PDFViewerApplication.download = function() { console.log("Action disabled"); };
-            PDFViewerApplication.save = function() { console.log("Action disabled"); };
-            PDFViewerApplication.print = function() { console.log("Action disabled"); };
-            
-            window.addEventListener('keydown', function(e) {
-                if ((e.ctrlKey || e.metaKey) && ['s','p'].includes(e.key.toLowerCase())) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                }
-            }, true);
-
-            document.addEventListener('contextmenu', e => e.preventDefault());
-
-            // --- B. CHAPTER LOGIC ---
-            const urlParams = new URLSearchParams(window.location.search);
-            if (!urlParams.has('start') || !urlParams.has('end')) return;
-
-            const reqStart = parseInt(urlParams.get('start'));
-            const reqEnd = parseInt(urlParams.get('end'));
-
-            try {
-                // Wait for the PDF file to actually load
-                await PDFViewerApplication.pdfDocumentPromise;
-            } catch (error) {
-                console.error("PDF Failed to load (likely origin check or network error):", error);
-                return; // Stop execution if PDF didn't load
-            }
-            
-            // If we get here, the PDF is loaded and pdfDocument is NOT null
-            const totalPages = PDFViewerApplication.pdfDocument.numPages;
-            const startPage = Math.max(1, Math.min(reqStart, totalPages));
-            const endPage = Math.max(startPage, Math.min(reqEnd, totalPages));
-            const chapterLength = endPage - startPage + 1;
-
-            console.log(`[DTL] Chapter Mode: ${startPage} to ${endPage}`);
-
-            // --- C. UI VIRTUALIZATION ---
-            const numPagesEl = document.getElementById('numPages');
-            if (numPagesEl) {
-                numPagesEl.textContent = `of ${chapterLength}`;
-                numPagesEl.style.visibility = 'visible';
-            }
-
-            const pageInput = document.getElementById('pageNumber');
-            
-            const updatePageDisplay = () => {
-                const currentAbs = PDFViewerApplication.page;
-                const currentRel = currentAbs - startPage + 1;
-                if (pageInput && document.activeElement !== pageInput) {
-                    pageInput.value = currentRel;
-                    pageInput.min = 1;
-                    pageInput.max = chapterLength;
-                }
-            };
-
-            if (pageInput) {
-                pageInput.addEventListener('change', function() {
-                    const relPage = parseInt(this.value);
-                    if (isNaN(relPage)) return;
-                    
-                    let targetAbs = startPage + relPage - 1;
-                    if (targetAbs < startPage) targetAbs = startPage;
-                    if (targetAbs > endPage) targetAbs = endPage;
-                    
-                    PDFViewerApplication.page = targetAbs;
-                });
-            }
-
-            // --- D. NAVIGATION LOCKING ---
-            if (PDFViewerApplication.page < startPage || PDFViewerApplication.page > endPage) {
+            if (currentAbs < startPage) {
                 PDFViewerApplication.page = startPage;
+                return;
             }
-            updatePageDisplay();
-
-            let endCard = null;
-            const showEndCard = () => {
-                if (endCard) return;
-                endCard = document.createElement('div');
-                endCard.innerHTML = `
-                    <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:flex;justify-content:center;align-items:center;z-index:99999;">
-                        <div style="background:white;padding:40px;border-radius:8px;text-align:center;max-width:400px;font-family:sans-serif;">
-                            <h2>End of Chapter</h2>
-                            <p>You have reached the end of the assigned reading.</p>
-                            <button id="dtl-return-btn" style="padding:10px 20px;background:#0061fe;color:white;border:none;border-radius:4px;cursor:pointer;">Return to Chapter</button>
-                        </div>
-                    </div>`;
-                document.body.appendChild(endCard);
-                document.getElementById('dtl-return-btn').onclick = () => {
-                    endCard.remove();
-                    endCard = null;
-                };
-            };
-
-            PDFViewerApplication.eventBus.on('pagechanging', function(evt) {
-                const destPage = evt.pageNumber;
-                requestAnimationFrame(updatePageDisplay);
-
-                if (destPage < startPage) {
-                    requestAnimationFrame(() => { PDFViewerApplication.page = startPage; });
-                } else if (destPage > endPage) {
-                    requestAnimationFrame(() => { PDFViewerApplication.page = endPage; });
-                    showEndCard();
-                }
-            });
-
-            const firstBtn = document.getElementById('firstPage');
-            const lastBtn = document.getElementById('lastPage');
             
-            if (firstBtn) {
-                const newFirst = firstBtn.cloneNode(true);
-                firstBtn.parentNode.replaceChild(newFirst, firstBtn);
-                newFirst.addEventListener('click', () => PDFViewerApplication.page = startPage);
+            const currentRel = currentAbs - startPage + 1;
+            if (pageInput && document.activeElement !== pageInput) {
+                pageInput.value = currentRel;
+                pageInput.min = 1;
+                pageInput.max = chapterLength;
             }
-            if (lastBtn) {
-                const newLast = lastBtn.cloneNode(true);
-                lastBtn.parentNode.replaceChild(newLast, lastBtn);
-                newLast.addEventListener('click', () => PDFViewerApplication.page = endPage);
+        };
+
+        PDFViewerApplication.eventBus.on('pagechanging', function(evt) {
+            updatePageDisplay();
+            if (evt.pageNumber < startPage) {
+                PDFViewerApplication.page = startPage;
+            } else if (evt.pageNumber > endPage) {
+                PDFViewerApplication.page = endPage;
             }
         });
-    })();
-    </script>
+
+        if (pageInput) {
+            pageInput.addEventListener('change', function() {
+                const relPage = parseInt(this.value);
+                if (isNaN(relPage)) return;
+                let targetAbs = startPage + relPage - 1;
+                if (targetAbs < startPage) targetAbs = startPage;
+                if (targetAbs > endPage) targetAbs = endPage;
+                PDFViewerApplication.page = targetAbs;
+            });
+        }
+
+        // E. FORCE INITIAL VIEW
+        setTimeout(() => {
+            PDFViewerApplication.page = startPage;
+            updatePageDisplay();
+        }, 500);
+        
+        // F. END OF CHAPTER CARD
+        const viewerContainer = document.getElementById('viewer');
+        const endMarker = document.createElement('div');
+        endMarker.innerHTML = `
+            <div style="padding: 50px; text-align: center; color: #666; background: #f4f4f4; margin-top: 20px; border-top: 1px solid #ccc;">
+                <h3>End of Assigned Reading</h3>
+                <p>You have reached the end of this chapter.</p>
+            </div>
+        `;
+        viewerContainer.appendChild(endMarker);
+
+    });
+})();
+</script>
   </body>
 </html>
