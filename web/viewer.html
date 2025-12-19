@@ -532,7 +532,7 @@ See https://github.com/adobe-type-tools/cmap-resources
         </div>
       </div>
 
-      <div id="dialogContainer">
+    <div id="dialogContainer">
         <dialog id="passwordDialog">
           <div class="row">
             <label for="password" id="passwordText" data-l10n-id="pdfjs-password-label"></label>
@@ -619,6 +619,45 @@ See https://github.com/adobe-type-tools/cmap-resources
           </div>
           <div class="buttonRow">
             <button id="printCancel" class="dialogButton" type="button"><span data-l10n-id="pdfjs-print-progress-close-button"></span></button>
+          </div>
+        </dialog>
+        <dialog class="dialog altText" id="altTextDialog" aria-labelledby="dialogLabel" aria-describedby="dialogDescription">
+          <div id="altTextContainer" class="mainContainer">
+            <div id="overallDescription">
+              <span id="dialogLabel" data-l10n-id="pdfjs-editor-alt-text-dialog-label" class="title"></span>
+              <span id="dialogDescription" data-l10n-id="pdfjs-editor-alt-text-dialog-description"></span>
+            </div>
+            <div id="addDescription">
+              <div class="radio">
+                <div class="radioButton">
+                  <input type="radio" id="descriptionButton" name="altTextOption" tabindex="0" aria-describedby="descriptionAreaLabel" checked />
+                  <label for="descriptionButton" data-l10n-id="pdfjs-editor-alt-text-add-description-label"></label>
+                </div>
+                <div class="radioLabel">
+                  <span id="descriptionAreaLabel" data-l10n-id="pdfjs-editor-alt-text-add-description-description"></span>
+                </div>
+              </div>
+              <div class="descriptionArea">
+                <textarea id="descriptionTextarea" aria-labelledby="descriptionAreaLabel" data-l10n-id="pdfjs-editor-alt-text-textarea" tabindex="0"></textarea>
+              </div>
+            </div>
+            <div id="markAsDecorative">
+              <div class="radio">
+                <div class="radioButton">
+                  <input type="radio" id="decorativeButton" name="altTextOption" aria-describedby="decorativeLabel" />
+                  <label for="decorativeButton" data-l10n-id="pdfjs-editor-alt-text-mark-decorative-label"></label>
+                </div>
+                <div class="radioLabel">
+                  <span id="decorativeLabel" data-l10n-id="pdfjs-editor-alt-text-mark-decorative-description"></span>
+                </div>
+              </div>
+            </div>
+            <div id="buttons">
+              <button id="altTextCancel" class="secondaryButton" type="button" tabindex="0">
+                <span data-l10n-id="pdfjs-editor-alt-text-cancel-button"></span>
+              </button>
+              <button id="altTextSave" class="primaryButton" type="button" tabindex="0"><span data-l10n-id="pdfjs-editor-alt-text-save-button"></span></button>
+            </div>
           </div>
         </dialog>
       </div>
