@@ -1155,7 +1155,7 @@ See https://github.com/adobe-type-tools/cmap-resources
                 "thedtl.org", "thedtl.github.io", "oclc.org", 
                 "libapps.com", "libguides.com", "springshare.com", 
                 "localhost", "127.0.0.1",
-                "ccrawford.workers.dev" // Added your new worker domain
+                "ccrawford.workers.dev"
             ];
             
             let referrer = document.referrer || "";
@@ -1185,7 +1185,6 @@ See https://github.com/adobe-type-tools/cmap-resources
         // 2. PDF.js INITIALIZATION & LOGIC
         // ---------------------------------------------------------
         
-        // Wait for the viewer to load (Event-driven, NO POLLING)
         document.addEventListener('webviewerloaded', async function() {
             const PDFViewerApplication = window.PDFViewerApplication;
             
@@ -1193,12 +1192,10 @@ See https://github.com/adobe-type-tools/cmap-resources
             await PDFViewerApplication.initializedPromise;
 
             // --- A. NEUTER INTERNAL COMMANDS ---
-            // This prevents the actions even if the buttons are unhidden
             PDFViewerApplication.download = function() { console.log("Action disabled"); };
             PDFViewerApplication.save = function() { console.log("Action disabled"); };
             PDFViewerApplication.print = function() { console.log("Action disabled"); };
             
-            // Disable keyboard shortcuts (Ctrl+S, Ctrl+P)
             window.addEventListener('keydown', function(e) {
                 if ((e.ctrlKey || e.metaKey) && ['s','p'].includes(e.key.toLowerCase())) {
                     e.preventDefault();
@@ -1206,7 +1203,6 @@ See https://github.com/adobe-type-tools/cmap-resources
                 }
             }, true);
 
-            // Disable Context Menu (Right Click)
             document.addEventListener('contextmenu', e => e.preventDefault());
 
             // --- B. CHAPTER LOGIC ---
@@ -1216,9 +1212,15 @@ See https://github.com/adobe-type-tools/cmap-resources
             const reqStart = parseInt(urlParams.get('start'));
             const reqEnd = parseInt(urlParams.get('end'));
 
-            // Wait for the PDF file to actually load
-            await PDFViewerApplication.pdfDocumentPromise;
+            try {
+                // Wait for the PDF file to actually load
+                await PDFViewerApplication.pdfDocumentPromise;
+            } catch (error) {
+                console.error("PDF Failed to load (likely origin check or network error):", error);
+                return; // Stop execution if PDF didn't load
+            }
             
+            // If we get here, the PDF is loaded and pdfDocument is NOT null
             const totalPages = PDFViewerApplication.pdfDocument.numPages;
             const startPage = Math.max(1, Math.min(reqStart, totalPages));
             const endPage = Math.max(startPage, Math.min(reqEnd, totalPages));
@@ -1226,19 +1228,15 @@ See https://github.com/adobe-type-tools/cmap-resources
 
             console.log(`[DTL] Chapter Mode: ${startPage} to ${endPage}`);
 
-            // --- C. UI VIRTUALIZATION (Make Page 10 look like Page 1) ---
-            
-            // 1. Update "of X" label
+            // --- C. UI VIRTUALIZATION ---
             const numPagesEl = document.getElementById('numPages');
             if (numPagesEl) {
                 numPagesEl.textContent = `of ${chapterLength}`;
                 numPagesEl.style.visibility = 'visible';
             }
 
-            // 2. Intercept Page Number Input
             const pageInput = document.getElementById('pageNumber');
             
-            // Function to update input box to show relative page
             const updatePageDisplay = () => {
                 const currentAbs = PDFViewerApplication.page;
                 const currentRel = currentAbs - startPage + 1;
@@ -1249,15 +1247,12 @@ See https://github.com/adobe-type-tools/cmap-resources
                 }
             };
 
-            // Listen for user typing in the box
             if (pageInput) {
                 pageInput.addEventListener('change', function() {
                     const relPage = parseInt(this.value);
                     if (isNaN(relPage)) return;
                     
                     let targetAbs = startPage + relPage - 1;
-                    
-                    // Bounds check
                     if (targetAbs < startPage) targetAbs = startPage;
                     if (targetAbs > endPage) targetAbs = endPage;
                     
@@ -1266,14 +1261,11 @@ See https://github.com/adobe-type-tools/cmap-resources
             }
 
             // --- D. NAVIGATION LOCKING ---
-
-            // Force jump to start immediately
             if (PDFViewerApplication.page < startPage || PDFViewerApplication.page > endPage) {
                 PDFViewerApplication.page = startPage;
             }
             updatePageDisplay();
 
-            // The End Card Element
             let endCard = null;
             const showEndCard = () => {
                 if (endCard) return;
@@ -1293,24 +1285,18 @@ See https://github.com/adobe-type-tools/cmap-resources
                 };
             };
 
-            // Monitor Page Changes
             PDFViewerApplication.eventBus.on('pagechanging', function(evt) {
                 const destPage = evt.pageNumber;
-                
-                // Update the input box to show relative number
                 requestAnimationFrame(updatePageDisplay);
 
                 if (destPage < startPage) {
-                    // If trying to go back before start, force back to start
                     requestAnimationFrame(() => { PDFViewerApplication.page = startPage; });
                 } else if (destPage > endPage) {
-                    // If trying to go past end, force back to end and show card
                     requestAnimationFrame(() => { PDFViewerApplication.page = endPage; });
                     showEndCard();
                 }
             });
 
-            // Override First/Last page buttons in toolbar
             const firstBtn = document.getElementById('firstPage');
             const lastBtn = document.getElementById('lastPage');
             
