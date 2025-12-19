@@ -17647,7 +17647,7 @@ initCom(PDFViewerApplication);
 }
 {
   const HOSTED_VIEWER_ORIGINS = new Set(["null", "http://mozilla.github.io", "https://mozilla.github.io"]);
-  var validateFileURL = function (file) {
+ var validateFileURL = function (file) {
     if (!file) {
       return;
     }
@@ -17659,6 +17659,13 @@ initCom(PDFViewerApplication);
     if (fileOrigin === viewerOrigin) {
       return;
     }
+    
+    // --- MODIFICATION START ---
+    // We simply return here to bypass the check and allow external files (like your Worker)
+    return; 
+    // --- MODIFICATION END ---
+
+    // The lines below are now unreachable, so the error won't happen:
     const ex = new Error("file origin does not match viewer's");
     PDFViewerApplication._documentError("pdfjs-loading-error", {
       message: ex.message
