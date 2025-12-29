@@ -1165,16 +1165,22 @@ See https://github.com/adobe-type-tools/cmap-resources
     <!-- outerContainer -->
     <div id="printContainer"></div>
 
-<!-- DTL Chapter Restrictions (Fixed: Waits for 'pagesinit') -->
-<script>
+// DTL Chapter-Based Restrictions for PDF.js Viewer (Secure Token Version)
+// Add this script to your viewer.html in place of your existing restriction script
+
+// ---------------------------------------------------------
+// SECURITY LOCK: STRICT REFERRER CHECK (DOM REPLACEMENT)
+// ---------------------------------------------------------
 (function() {
-    // 1. SECURITY: REFERRER CHECK
     try {
         const ALLOWED_HOSTS = [
-            "thedtl.org", "thedtl.github.io", "oclc.org", 
-            "libapps.com", "libguides.com", "springshare.com", 
-            "localhost", "127.0.0.1",
-            "ccrawford.workers.dev"
+            "thedtl.org",
+            "thedtl.github.io",
+            "oclc.org", 
+            "libapps.com", 
+            "libguides.com", 
+            "springshare.com", 
+            "localhost"
         ];
         
         let referrer = document.referrer || "";
@@ -1182,151 +1188,502 @@ See https://github.com/adobe-type-tools/cmap-resources
             referrer = window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1];
         }
         
-        // Uncomment to enforce strict security:
-        /*
         const isAllowed = ALLOWED_HOSTS.some(host => referrer.includes(host));
+        
         if (!isAllowed) {
-            document.body.innerHTML = "<h1>Access Denied</h1>";
-            throw new Error("Access Denied");
+            const refDisplay = referrer || 'Hidden / Direct Link';
+            
+            document.documentElement.innerHTML = `
+                <head>
+                    <title>Access Denied</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                </head>
+                <body style="background-color: #fff; font-family: sans-serif; text-align: center; padding-top: 50px; margin: 0;">
+                    <div style="color: #d9534f;">
+                        <h1>Access Denied</h1>
+                        <p>This document must be accessed via the Library website.</p>
+                        <p style="color: #666; font-size: 12px;">(Referrer: ${refDisplay})</p>
+                    </div>
+                </body>
+            `;
+            window.stop();
+            throw new Error("Access Denied: Invalid Referrer"); 
         }
-        */
     } catch (e) {
-        window.stop();
-        throw e;
+        if (e.message.includes("Access Denied")) {
+            throw e;
+        }
     }
+})();
 
-    // 2. PDF.js LOGIC
-    document.addEventListener('webviewerloaded', function() {
-        const PDFViewerApplication = window.PDFViewerApplication;
+// ---------------------------------------------------------
+// TOKEN DECODING HELPER
+// ---------------------------------------------------------
+function decodeToken(token) {
+    try {
+        // Token format: base64url(payload).base64url(signature)
+        const parts = token.split('.');
+        if (parts.length !== 2) return null;
+        
+        const payloadB64 = parts[0];
+        
+        // Convert base64url to base64
+        let base64 = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
+        while (base64.length % 4) {
+            base64 += '=';
+        }
+        
+        // Decode
+        const json = atob(base64);
+        return JSON.parse(json);
+    } catch (e) {
+        console.error('[DTL] Token decode error:', e);
+        return null;
+    }
+}
 
-        // A. Disable Commands Immediately
-        PDFViewerApplication.initializedPromise.then(() => {
-            PDFViewerApplication.download = () => console.log("Disabled");
-            PDFViewerApplication.save = () => console.log("Disabled");
-            PDFViewerApplication.print = () => console.log("Disabled");
+// ---------------------------------------------------------
+// CONFIGURABLE RESTRICTIONS (READ FROM TOKEN OR URL PARAMS)
+// ---------------------------------------------------------
+(function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    let pageLimit = 100;
+    let allowDownload = false;
+    let chapterStart = null;
+    let chapterEnd = null;
+    let chapterName = null;
+    
+    // Check for signed token first (secure mode)
+    const token = urlParams.get('token');
+    if (token) {
+        const payload = decodeToken(token);
+        if (payload) {
+            chapterStart = payload.s || null;
+            chapterEnd = payload.e || null;
+            chapterName = payload.c || null;
+            allowDownload = payload.d === 1;
+            console.log('[DTL] Secure token mode active');
+        }
+    } else {
+        // Legacy mode: read from URL params directly (backward compatibility)
+        pageLimit = parseInt(urlParams.get('limit')) || 100;
+        allowDownload = urlParams.get('download') === 'true';
+        chapterStart = parseInt(urlParams.get('start')) || null;
+        chapterEnd = parseInt(urlParams.get('end')) || null;
+        chapterName = urlParams.get('chapter') ? decodeURIComponent(urlParams.get('chapter')) : null;
+        console.log('[DTL] Legacy URL param mode');
+    }
+    
+    // Determine which mode we're in
+    const isChapterMode = chapterStart !== null && chapterEnd !== null;
+    
+    window.DTL_RESTRICTIONS = {
+        pageLimit: pageLimit,
+        allowDownload: allowDownload,
+        chapterStart: chapterStart,
+        chapterEnd: chapterEnd,
+        chapterName: chapterName,
+        isChapterMode: isChapterMode,
+        maxPage: null,
+        totalPages: null,
+        chapterLength: isChapterMode ? (chapterEnd - chapterStart + 1) : null
+    };
+    
+    if (isChapterMode) {
+        console.log(`[DTL] Chapter mode: pages ${chapterStart}-${chapterEnd}${chapterName ? ` (${chapterName})` : ''}, download=${allowDownload}`);
+    } else {
+        console.log(`[DTL] Percentage mode: ${pageLimit}% limit, download=${allowDownload}`);
+    }
+    
+    // ---------------------------------------------------------
+    // ALWAYS HIDE EDITOR/ANNOTATION TOOLS
+    // ---------------------------------------------------------
+    const hideEditorTools = () => {
+        const editorSelectors = [
+            '#editorModeButtons',
+            '#editorModeSeparator',
+            '#editorHighlight',
+            '#editorFreeText', 
+            '#editorInk',
+            '#editorStamp',
+            '#editorComment',
+            '#editorSignature'
+        ];
+        editorSelectors.forEach(sel => {
+            const el = document.querySelector(sel);
+            if (el) el.style.display = 'none';
         });
-
-        // Disable Right Click & Shortcuts
-        document.addEventListener('contextmenu', e => e.preventDefault());
-        window.addEventListener('keydown', function(e) {
-            if ((e.ctrlKey || e.metaKey) && ['s','p','o'].includes(e.key.toLowerCase())) {
+        console.log('[DTL] Editor tools hidden');
+    };
+    
+    hideEditorTools();
+    setTimeout(hideEditorTools, 500);
+    setTimeout(hideEditorTools, 1500);
+    
+    // ---------------------------------------------------------
+    // DOWNLOAD/PRINT RESTRICTIONS
+    // ---------------------------------------------------------
+    const downloadPrintSelectors = [
+        '#downloadButton',
+        '#printButton',
+        '#secondaryDownload', 
+        '#secondaryPrint', 
+        '#secondaryOpenFile'
+    ];
+    
+    const setButtonVisibility = (show) => {
+        downloadPrintSelectors.forEach(sel => {
+            const el = document.querySelector(sel);
+            if (el) {
+                el.style.display = show ? '' : 'none';
+            }
+        });
+        console.log(`[DTL] Download/print buttons ${show ? 'shown' : 'hidden'}`);
+    };
+    
+    const applyDownloadRestrictions = () => {
+        setButtonVisibility(allowDownload);
+    };
+    
+    applyDownloadRestrictions();
+    setTimeout(applyDownloadRestrictions, 500);
+    setTimeout(applyDownloadRestrictions, 1500);
+    
+    if (!allowDownload) {
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.key === 'p' || e.key === 'P')) {
                 e.preventDefault();
                 e.stopPropagation();
+                return false;
             }
         }, true);
-
-        // B. WAIT FOR PAGES TO LOAD (Fixes the "null" error)
-        // We listen for 'pagesinit', which fires only when page count is known.
-        PDFViewerApplication.eventBus.on('pagesinit', function() {
-            console.log("[DTL] PDF Pages Initialized. Applying restrictions...");
-
-            // 1. Parse URL Params
-            const urlParams = new URLSearchParams(window.location.search);
-            if (!urlParams.has('start') || !urlParams.has('end')) return;
-
-            const reqStart = parseInt(urlParams.get('start'));
-            const reqEnd = parseInt(urlParams.get('end'));
-
-            // 2. Get Document Info
-            const pdfDocument = PDFViewerApplication.pdfDocument;
-            if (!pdfDocument) return; 
-
-            const totalPages = pdfDocument.numPages;
-            const startPage = Math.max(1, Math.min(reqStart, totalPages));
-            const endPage = Math.max(startPage, Math.min(reqEnd, totalPages));
-            const chapterLength = endPage - startPage + 1;
-
-            console.log(`[DTL] Chapter Mode: ${startPage} to ${endPage} (Total: ${totalPages})`);
-
-            // 3. INJECT CSS TO HIDE PAGES
-            const styleSheet = document.createElement("style");
-            styleSheet.type = "text/css";
-            let cssRules = "";
-
-            // Hide pages BEFORE start
-            for (let i = 1; i < startPage; i++) {
-                cssRules += `.page[data-page-number="${i}"], .thumbnail[data-page-number="${i}"] { display: none !important; } \n`;
-            }
-            // Hide pages AFTER end
-            for (let i = endPage + 1; i <= totalPages; i++) {
-                cssRules += `.page[data-page-number="${i}"], .thumbnail[data-page-number="${i}"] { display: none !important; } \n`;
-            }
-            
-            styleSheet.innerText = cssRules;
-            document.head.appendChild(styleSheet);
-
-            // 4. UI VIRTUALIZATION (Page 17 becomes Page 1)
-            const numPagesEl = document.getElementById('numPages');
-            if (numPagesEl) {
-                numPagesEl.textContent = `of ${chapterLength}`;
-                numPagesEl.style.visibility = 'visible';
-            }
-
-            const pageInput = document.getElementById('pageNumber');
-            
-            const updatePageDisplay = () => {
-                const currentAbs = PDFViewerApplication.page;
-                
-                // If user is on a hidden page, force jump to start
-                if (currentAbs < startPage) {
-                    PDFViewerApplication.page = startPage;
-                    return;
-                }
-                
-                const currentRel = currentAbs - startPage + 1;
-                if (pageInput && document.activeElement !== pageInput) {
-                    pageInput.value = currentRel;
-                    pageInput.min = 1;
-                    pageInput.max = chapterLength;
-                }
-            };
-
-            // 5. NAVIGATION HANDLERS
-            PDFViewerApplication.eventBus.on('pagechanging', function(evt) {
-                requestAnimationFrame(() => {
-                    updatePageDisplay();
-                    if (evt.pageNumber < startPage) {
-                        PDFViewerApplication.page = startPage;
-                    } else if (evt.pageNumber > endPage) {
-                        PDFViewerApplication.page = endPage;
-                    }
-                });
-            });
-
-            if (pageInput) {
-                pageInput.addEventListener('change', function() {
-                    const relPage = parseInt(this.value);
-                    if (isNaN(relPage)) return;
-                    let targetAbs = startPage + relPage - 1;
-                    if (targetAbs < startPage) targetAbs = startPage;
-                    if (targetAbs > endPage) targetAbs = endPage;
-                    PDFViewerApplication.page = targetAbs;
-                });
-            }
-
-            // 6. FORCE INITIAL JUMP
-            setTimeout(() => {
-                if (PDFViewerApplication.page < startPage) {
-                    PDFViewerApplication.page = startPage;
-                }
-                updatePageDisplay();
-            }, 500);
-
-            // 7. END MARKER
-            const viewerContainer = document.getElementById('viewer');
-            if (viewerContainer) {
-                const endMarker = document.createElement('div');
-                endMarker.innerHTML = `
-                    <div style="padding: 50px; text-align: center; color: #666; background: #f4f4f4; margin-top: 20px; border-top: 1px solid #ccc;">
-                        <h3>End of Assigned Reading</h3>
-                        <p>You have reached the end of this chapter.</p>
+        
+        document.addEventListener('contextmenu', e => e.preventDefault());
+    }
+    
+    // ---------------------------------------------------------
+    // END OF CHAPTER/PREVIEW CARD
+    // ---------------------------------------------------------
+    const showEndCard = (isChapter = false) => {
+        if (document.getElementById('dtl-preview-end-card')) return;
+        
+        const r = window.DTL_RESTRICTIONS;
+        let title, message, pageInfo;
+        
+        if (isChapter) {
+            title = 'End of Chapter';
+            message = r.chapterName 
+                ? `You've reached the end of "${r.chapterName}".`
+                : `You've reached the end of this chapter.`;
+            pageInfo = `Pages ${r.chapterStart}-${r.chapterEnd} of ${r.totalPages}`;
+        } else {
+            title = 'Preview Complete';
+            message = `You've reached the end of this ${r.pageLimit}% preview.`;
+            pageInfo = `Page ${r.maxPage} of ${r.totalPages}`;
+        }
+        
+        const endCard = document.createElement('div');
+        endCard.id = 'dtl-preview-end-card';
+        endCard.innerHTML = `
+            <div style="
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.85);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 99999;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            ">
+                <div style="
+                    background: white;
+                    padding: 40px 50px;
+                    border-radius: 12px;
+                    text-align: center;
+                    max-width: 500px;
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                ">
+                    <div style="font-size: 48px; margin-bottom: 20px;">📖</div>
+                    <h2 style="margin: 0 0 15px 0; color: #333; font-size: 24px;">${title}</h2>
+                    <p style="color: #666; margin: 0 0 20px 0; line-height: 1.6;">
+                        ${message}
+                    </p>
+                    <p style="color: #555; margin: 0 0 15px 0; font-size: 14px; line-height: 1.5;">
+                        To request additional chapters, select the DTL library to which your institution belongs:
+                    </p>
+                    <div style="display: flex; gap: 12px; justify-content: center; margin-bottom: 20px;">
+                        <a href="https://dtl.idm.oclc.org/login?url=https://libguides.thedtl.org/c.php?g=1313206" 
+                           target="_blank" 
+                           rel="noopener"
+                           style="
+                               padding: 10px 20px;
+                               background: #0061fe;
+                               color: white;
+                               text-decoration: none;
+                               border-radius: 6px;
+                               font-size: 14px;
+                               font-weight: 600;
+                           ">DTL 1</a>
+                        <a href="https://theoref.idm.oclc.org/login?url=https://libguides.thedtl.org/c.php?g=1313206" 
+                           target="_blank"
+                           rel="noopener"
+                           style="
+                               padding: 10px 20px;
+                               background: #0061fe;
+                               color: white;
+                               text-decoration: none;
+                               border-radius: 6px;
+                               font-size: 14px;
+                               font-weight: 600;
+                           ">DTL 2</a>
                     </div>
-                `;
-                viewerContainer.appendChild(endMarker);
-            }
-        });
-    });
+                    <div style="
+                        background: #f5f5f5;
+                        padding: 12px 20px;
+                        border-radius: 6px;
+                        color: #888;
+                        font-size: 14px;
+                    ">
+                        ${pageInfo}
+                    </div>
+                    <button onclick="document.getElementById('dtl-preview-end-card').remove()" style="
+                        margin-top: 20px;
+                        padding: 10px 24px;
+                        background: #f0f0f0;
+                        color: #666;
+                        border: none;
+                        border-radius: 6px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        cursor: pointer;
+                    ">Return to Chapter</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(endCard);
+    };
+    
+    // ---------------------------------------------------------
+    // CHAPTER MODE RESTRICTIONS
+    // ---------------------------------------------------------
+    if (isChapterMode) {
+        const enforceChapterRestrictions = () => {
+            const checkReady = setInterval(() => {
+                if (window.PDFViewerApplication && window.PDFViewerApplication.pdfDocument) {
+                    clearInterval(checkReady);
+                    
+                    const pdfDoc = window.PDFViewerApplication.pdfDocument;
+                    const totalPages = pdfDoc.numPages;
+                    const r = window.DTL_RESTRICTIONS;
+                    
+                    r.totalPages = totalPages;
+                    
+                    // Validate chapter bounds
+                    const validStart = Math.max(1, Math.min(chapterStart, totalPages));
+                    const validEnd = Math.max(validStart, Math.min(chapterEnd, totalPages));
+                    r.chapterStart = validStart;
+                    r.chapterEnd = validEnd;
+                    r.chapterLength = validEnd - validStart + 1;
+                    
+                    // Jump to chapter start page
+                    window.PDFViewerApplication.page = validStart;
+                    
+                    // ---------------------------------------------------------
+                    // CUSTOM PAGE NUMBER DISPLAY (Both relative and absolute)
+                    // ---------------------------------------------------------
+                    const updatePageDisplay = (currentPage) => {
+                        const relPage = currentPage - validStart + 1;
+                        const pageInput = document.getElementById('pageNumber');
+                        const numPagesEl = document.getElementById('numPages');
+                        
+                        if (pageInput) {
+                            pageInput.value = relPage;
+                            pageInput.max = r.chapterLength;
+                            pageInput.min = 1;
+                        }
+                        
+                        if (numPagesEl) {
+                            numPagesEl.textContent = `of ${r.chapterLength} (p. ${currentPage} in book)`;
+                        }
+                    };
+                    
+                    // Initial display update
+                    updatePageDisplay(validStart);
+                    
+                    // ---------------------------------------------------------
+                    // NAVIGATION RESTRICTION
+                    // ---------------------------------------------------------
+                    window.PDFViewerApplication.eventBus.on('pagechanging', function(evt) {
+                        const page = evt.pageNumber;
+                        
+                        if (page < validStart) {
+                            setTimeout(() => { 
+                                window.PDFViewerApplication.page = validStart; 
+                                updatePageDisplay(validStart);
+                            }, 50);
+                            showEndCard(true);
+                        } else if (page > validEnd) {
+                            setTimeout(() => { 
+                                window.PDFViewerApplication.page = validEnd; 
+                                updatePageDisplay(validEnd);
+                            }, 50);
+                            showEndCard(true);
+                        } else {
+                            updatePageDisplay(page);
+                        }
+                    });
+                    
+                    // ---------------------------------------------------------
+                    // PAGE INPUT HANDLING (Convert relative to absolute)
+                    // ---------------------------------------------------------
+                    const pageInput = document.getElementById('pageNumber');
+                    if (pageInput) {
+                        // Intercept page input to convert from relative to absolute
+                        pageInput.addEventListener('change', function(e) {
+                            e.stopPropagation();
+                            const relPage = parseInt(this.value);
+                            
+                            if (isNaN(relPage) || relPage < 1) {
+                                window.PDFViewerApplication.page = validStart;
+                            } else if (relPage > r.chapterLength) {
+                                window.PDFViewerApplication.page = validEnd;
+                                showEndCard(true);
+                            } else {
+                                const absPage = validStart + relPage - 1;
+                                window.PDFViewerApplication.page = absPage;
+                            }
+                        }, true);
+                        
+                        // Prevent default behavior
+                        pageInput.addEventListener('keydown', function(e) {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                this.dispatchEvent(new Event('change'));
+                            }
+                        }, true);
+                    }
+                    
+                    // ---------------------------------------------------------
+                    // HIDE THUMBNAILS OUTSIDE CHAPTER RANGE
+                    // ---------------------------------------------------------
+                    const hideThumbnailsOutsideRange = () => {
+                        const thumbnailView = document.getElementById('thumbnailView');
+                        if (!thumbnailView) return;
+                        
+                        // Add CSS to hide out-of-range thumbnails
+                        let style = document.getElementById('dtl-thumbnail-style');
+                        if (!style) {
+                            style = document.createElement('style');
+                            style.id = 'dtl-thumbnail-style';
+                            document.head.appendChild(style);
+                        }
+                        
+                        // Build CSS rules to hide thumbnails outside range
+                        let css = '';
+                        for (let i = 1; i < validStart; i++) {
+                            css += `#thumbnailView .thumbnail[data-page-number="${i}"],`;
+                        }
+                        for (let i = validEnd + 1; i <= totalPages; i++) {
+                            css += `#thumbnailView .thumbnail[data-page-number="${i}"],`;
+                        }
+                        
+                        if (css) {
+                            css = css.slice(0, -1) + ' { display: none !important; }';
+                            style.textContent = css;
+                        }
+                        
+                        console.log(`[DTL] Thumbnails hidden outside range ${validStart}-${validEnd}`);
+                    };
+                    
+                    // Apply thumbnail hiding with retries (thumbnails load asynchronously)
+                    hideThumbnailsOutsideRange();
+                    setTimeout(hideThumbnailsOutsideRange, 500);
+                    setTimeout(hideThumbnailsOutsideRange, 1500);
+                    setTimeout(hideThumbnailsOutsideRange, 3000);
+                    
+                    // Also hide when sidebar opens
+                    const sidebarToggle = document.getElementById('sidebarToggle');
+                    if (sidebarToggle) {
+                        sidebarToggle.addEventListener('click', () => {
+                            setTimeout(hideThumbnailsOutsideRange, 100);
+                            setTimeout(hideThumbnailsOutsideRange, 500);
+                        });
+                    }
+                    
+                    // ---------------------------------------------------------
+                    // HIDE OUTLINE/BOOKMARKS OUTSIDE CHAPTER (Optional)
+                    // ---------------------------------------------------------
+                    const filterOutline = () => {
+                        // This is more complex as it requires intercepting the outline
+                        // For now, we can hide the entire outline view if desired
+                        // Uncomment below to hide outline completely:
+                        // const outlineView = document.getElementById('outlineView');
+                        // if (outlineView) outlineView.style.display = 'none';
+                    };
+                    
+                    filterOutline();
+                    
+                    console.log(`[DTL] Chapter restriction active: pages ${validStart}-${validEnd}/${totalPages}`);
+                }
+            }, 100);
+            
+            setTimeout(() => clearInterval(checkReady), 30000);
+        };
+        
+        enforceChapterRestrictions();
+        
+    // ---------------------------------------------------------
+    // PERCENTAGE MODE RESTRICTIONS (Original behavior)
+    // ---------------------------------------------------------
+    } else if (pageLimit < 100) {
+        const enforcePageLimit = () => {
+            const checkReady = setInterval(() => {
+                if (window.PDFViewerApplication && window.PDFViewerApplication.pdfDocument) {
+                    clearInterval(checkReady);
+                    
+                    const totalPages = window.PDFViewerApplication.pdfDocument.numPages;
+                    const maxPage = Math.max(1, Math.floor(totalPages * (pageLimit / 100)));
+                    
+                    window.DTL_RESTRICTIONS.totalPages = totalPages;
+                    window.DTL_RESTRICTIONS.maxPage = maxPage;
+                    
+                    window.PDFViewerApplication.eventBus.on('pagechanging', function(evt) {
+                        if (evt.pageNumber > maxPage) {
+                            setTimeout(() => { window.PDFViewerApplication.page = maxPage; }, 50);
+                            showEndCard(false);
+                        }
+                    });
+                    
+                    const pageInput = document.getElementById('pageNumber');
+                    if (pageInput) {
+                        pageInput.max = maxPage;
+                        pageInput.addEventListener('change', function() {
+                            if (parseInt(this.value) > maxPage) {
+                                this.value = maxPage;
+                                window.PDFViewerApplication.page = maxPage;
+                                showEndCard(false);
+                            }
+                        });
+                    }
+                    
+                    const numPagesEl = document.getElementById('numPages');
+                    if (numPagesEl) {
+                        numPagesEl.textContent = `of ${maxPage}`;
+                    }
+                    
+                    console.log(`[DTL] Preview limit: ${maxPage}/${totalPages} pages (${pageLimit}%)`);
+                }
+            }, 100);
+            
+            setTimeout(() => clearInterval(checkReady), 30000);
+        };
+        
+        enforcePageLimit();
+    }
 })();
+      
 </script>
   </body>
 </html>
