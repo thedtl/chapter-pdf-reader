@@ -1365,7 +1365,10 @@ function decodeToken(token) {
     // ---------------------------------------------------------
     // END OF CHAPTER/PREVIEW CARD
     // ---------------------------------------------------------
-    const showEndCard = (isChapter = false) => {
+    let isInitializing = true; // Prevent endCard during initial load
+    
+    const showEndCard = (isChapter) => {
+        if (isInitializing) return; // Don't show during setup
         if (document.getElementById('dtl-preview-end-card')) return;
         
         const r = window.DTL_RESTRICTIONS;
@@ -1374,93 +1377,84 @@ function decodeToken(token) {
         if (isChapter) {
             title = 'End of Chapter';
             message = r.chapterName 
-                ? `You've reached the end of "${r.chapterName}".`
-                : `You've reached the end of this chapter.`;
-            pageInfo = `Pages ${r.chapterStart}-${r.chapterEnd} of ${r.totalPages}`;
+                ? 'You have reached the end of "' + r.chapterName + '".'
+                : 'You have reached the end of this chapter.';
+            pageInfo = 'Pages ' + r.chapterStart + '-' + r.chapterEnd + ' of ' + r.totalPages;
         } else {
             title = 'Preview Complete';
-            message = `You've reached the end of this ${r.pageLimit}% preview.`;
-            pageInfo = `Page ${r.maxPage} of ${r.totalPages}`;
+            message = 'You have reached the end of this ' + r.pageLimit + '% preview.';
+            pageInfo = 'Page ' + r.maxPage + ' of ' + r.totalPages;
         }
         
         const endCard = document.createElement('div');
         endCard.id = 'dtl-preview-end-card';
-        endCard.innerHTML = `
-            <div style="
-                position: fixed;
-                top: 0; left: 0; right: 0; bottom: 0;
-                background: rgba(0,0,0,0.85);
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                z-index: 99999;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            ">
-                <div style="
-                    background: white;
-                    padding: 40px 50px;
-                    border-radius: 12px;
-                    text-align: center;
-                    max-width: 500px;
-                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                ">
-                    <div style="font-size: 48px; margin-bottom: 20px;">📖</div>
-                    <h2 style="margin: 0 0 15px 0; color: #333; font-size: 24px;">${title}</h2>
-                    <p style="color: #666; margin: 0 0 20px 0; line-height: 1.6;">
-                        ${message}
-                    </p>
-                    <p style="color: #555; margin: 0 0 15px 0; font-size: 14px; line-height: 1.5;">
-                        To request additional chapters, select the DTL library to which your institution belongs:
-                    </p>
-                    <div style="display: flex; gap: 12px; justify-content: center; margin-bottom: 20px;">
-                        <a href="https://dtl.idm.oclc.org/login?url=https://libguides.thedtl.org/c.php?g=1313206" 
-                           target="_blank" 
-                           rel="noopener"
-                           style="
-                               padding: 10px 20px;
-                               background: #0061fe;
-                               color: white;
-                               text-decoration: none;
-                               border-radius: 6px;
-                               font-size: 14px;
-                               font-weight: 600;
-                           ">DTL 1</a>
-                        <a href="https://theoref.idm.oclc.org/login?url=https://libguides.thedtl.org/c.php?g=1313206" 
-                           target="_blank"
-                           rel="noopener"
-                           style="
-                               padding: 10px 20px;
-                               background: #0061fe;
-                               color: white;
-                               text-decoration: none;
-                               border-radius: 6px;
-                               font-size: 14px;
-                               font-weight: 600;
-                           ">DTL 2</a>
-                    </div>
-                    <div style="
-                        background: #f5f5f5;
-                        padding: 12px 20px;
-                        border-radius: 6px;
-                        color: #888;
-                        font-size: 14px;
-                    ">
-                        ${pageInfo}
-                    </div>
-                    <button onclick="document.getElementById('dtl-preview-end-card').remove()" style="
-                        margin-top: 20px;
-                        padding: 10px 24px;
-                        background: #f0f0f0;
-                        color: #666;
-                        border: none;
-                        border-radius: 6px;
-                        font-size: 14px;
-                        font-weight: 600;
-                        cursor: pointer;
-                    ">Return to Chapter</button>
-                </div>
-            </div>
-        `;
+        endCard.innerHTML = 
+            '<div style="' +
+                'position: fixed;' +
+                'top: 0; left: 0; right: 0; bottom: 0;' +
+                'background: rgba(0,0,0,0.85);' +
+                'display: flex;' +
+                'justify-content: center;' +
+                'align-items: center;' +
+                'z-index: 99999;' +
+                'font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;' +
+            '">' +
+                '<div style="' +
+                    'background: white;' +
+                    'padding: 40px 50px;' +
+                    'border-radius: 12px;' +
+                    'text-align: center;' +
+                    'max-width: 500px;' +
+                    'box-shadow: 0 20px 60px rgba(0,0,0,0.3);' +
+                '">' +
+                    '<div style="font-size: 48px; margin-bottom: 20px;">📖</div>' +
+                    '<h2 style="margin: 0 0 15px 0; color: #333; font-size: 24px;">' + title + '</h2>' +
+                    '<p style="color: #666; margin: 0 0 20px 0; line-height: 1.6;">' + message + '</p>' +
+                    '<p style="color: #555; margin: 0 0 15px 0; font-size: 14px; line-height: 1.5;">' +
+                        'To request additional chapters, select the DTL library to which your institution belongs:' +
+                    '</p>' +
+                    '<div style="display: flex; gap: 12px; justify-content: center; margin-bottom: 20px;">' +
+                        '<a href="https://dtl.idm.oclc.org/login?url=https://libguides.thedtl.org/c.php?g=1313206" ' +
+                           'target="_blank" rel="noopener" style="' +
+                               'padding: 10px 20px;' +
+                               'background: #0061fe;' +
+                               'color: white;' +
+                               'text-decoration: none;' +
+                               'border-radius: 6px;' +
+                               'font-size: 14px;' +
+                               'font-weight: 600;' +
+                           '">DTL 1</a>' +
+                        '<a href="https://theoref.idm.oclc.org/login?url=https://libguides.thedtl.org/c.php?g=1313206" ' +
+                           'target="_blank" rel="noopener" style="' +
+                               'padding: 10px 20px;' +
+                               'background: #0061fe;' +
+                               'color: white;' +
+                               'text-decoration: none;' +
+                               'border-radius: 6px;' +
+                               'font-size: 14px;' +
+                               'font-weight: 600;' +
+                           '">DTL 2</a>' +
+                    '</div>' +
+                    '<div style="' +
+                        'background: #f5f5f5;' +
+                        'padding: 12px 20px;' +
+                        'border-radius: 6px;' +
+                        'color: #888;' +
+                        'font-size: 14px;' +
+                    '">' + pageInfo + '</div>' +
+                    '<button onclick="document.getElementById(\'dtl-preview-end-card\').remove()" style="' +
+                        'margin-top: 20px;' +
+                        'padding: 10px 24px;' +
+                        'background: #f0f0f0;' +
+                        'color: #666;' +
+                        'border: none;' +
+                        'border-radius: 6px;' +
+                        'font-size: 14px;' +
+                        'font-weight: 600;' +
+                        'cursor: pointer;' +
+                    '">Return to Chapter</button>' +
+                '</div>' +
+            '</div>';
         document.body.appendChild(endCard);
     };
     
@@ -1626,6 +1620,9 @@ function decodeToken(token) {
                     filterOutline();
                     
                     console.log(`[DTL] Chapter restriction active: pages ${validStart}-${validEnd}/${totalPages}`);
+                    
+                    // Allow endCard to show now that setup is complete
+                    setTimeout(() => { isInitializing = false; }, 500);
                 }
             }, 100);
             
@@ -1674,6 +1671,9 @@ function decodeToken(token) {
                     }
                     
                     console.log(`[DTL] Preview limit: ${maxPage}/${totalPages} pages (${pageLimit}%)`);
+                    
+                    // Allow endCard to show now that setup is complete
+                    setTimeout(() => { isInitializing = false; }, 500);
                 }
             }, 100);
             
