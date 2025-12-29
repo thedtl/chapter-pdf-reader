@@ -1254,8 +1254,20 @@ function decodeToken(token) {
     let chapterEnd = null;
     let chapterName = null;
     
-    // Check for signed token first (secure mode)
-    const token = urlParams.get('token');
+    // Check for signed token - it's now inside the 'file' parameter as part of the Worker URL
+    const fileParam = urlParams.get('file');
+    let token = urlParams.get('token'); // Direct token (legacy)
+    
+    // Extract token from Worker URL if present
+    if (!token && fileParam) {
+        try {
+            const fileUrl = new URL(fileParam);
+            token = fileUrl.searchParams.get('token');
+        } catch (e) {
+            // fileParam might not be a valid URL
+        }
+    }
+    
     if (token) {
         const payload = decodeToken(token);
         if (payload) {
