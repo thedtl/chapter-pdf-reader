@@ -826,6 +826,26 @@ See https://github.com/adobe-type-tools/cmap-resources
         'use strict';
         
         // =============================================================
+        // SECURITY: DISABLE BACK BUTTON (Must be first!)
+        // =============================================================
+        (function blockBackButton() {
+            // Push state immediately
+            window.history.pushState({dtl: true}, '', window.location.href);
+            
+            // Keep pushing state whenever user tries to go back
+            window.addEventListener('popstate', function(e) {
+                window.history.pushState({dtl: true}, '', window.location.href);
+            });
+            
+            // Also warn on page unload as backup
+            window.addEventListener('beforeunload', function(e) {
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            });
+        })();
+        
+        // =============================================================
         // FRIENDLY ERROR PAGE
         // =============================================================
         function showErrorPage(icon, title, message) {
@@ -924,13 +944,13 @@ See https://github.com/adobe-type-tools/cmap-resources
         }
 
         // =============================================================
-        // SECURITY: DISABLE BACK BUTTON
+        // SECURITY: BLOCK BACK BUTTON / LEAVING PAGE
         // =============================================================
-        // Push a state so we can intercept back navigation
-        history.pushState(null, '', location.href);
-        window.addEventListener('popstate', function(e) {
-            // Push state again to trap user on this page
-            history.pushState(null, '', location.href);
+        window.addEventListener('beforeunload', function(e) {
+            // This triggers a browser confirmation dialog
+            e.preventDefault();
+            e.returnValue = ''; // Required for Chrome
+            return ''; // Required for older browsers
         });
 
         // =============================================================
