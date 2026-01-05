@@ -594,11 +594,17 @@ Security Features:
         }
 
         // =============================================================
-        // DEVTOOLS DETECTION (Friendly)
+        // DEVTOOLS DETECTION (Desktop Only)
         // =============================================================
         (function() {
-            const threshold = 160;
+            // Skip on mobile/tablet - screen dimensions are unreliable
+            const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            if (isMobile) return;
+            
+            const threshold = 200;
             let triggered = false;
+            let consecutiveDetections = 0;
+            const requiredDetections = 3;
             
             const checkDevTools = () => {
                 if (triggered) return;
@@ -607,18 +613,25 @@ Security Features:
                 const heightThreshold = window.outerHeight - window.innerHeight > threshold;
                 
                 if (widthThreshold || heightThreshold) {
-                    triggered = true;
-                    showSessionPage(
-                        '🔐',
-                        'Viewing Session Ended',
-                        'For content protection, this viewing session has closed. This is not an error—just a security feature to protect library resources.'
-                    );
+                    consecutiveDetections++;
+                    if (consecutiveDetections >= requiredDetections) {
+                        triggered = true;
+                        showSessionPage(
+                            '🔐',
+                            'Viewing Session Ended',
+                            'For content protection, this viewing session has closed. This is not an error—just a security feature to protect library resources.'
+                        );
+                    }
+                } else {
+                    consecutiveDetections = 0;
                 }
             };
             
-            // Check periodically and on resize
-            setInterval(checkDevTools, 1000);
-            window.addEventListener('resize', checkDevTools);
+            // Delay start to avoid false positives during page load
+            setTimeout(() => {
+                setInterval(checkDevTools, 1000);
+                window.addEventListener('resize', checkDevTools);
+            }, 3000);
         })();
 
         // =============================================================
