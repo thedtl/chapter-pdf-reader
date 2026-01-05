@@ -594,10 +594,12 @@ Security Features:
         }
 
         // =============================================================
-        // DEVTOOLS DETECTION (Desktop Only)
+        // DEVTOOLS DETECTION (Disabled - was causing false positives)
         // =============================================================
+        // The other protections (token signing, same-tab requirement, 
+        // blocked shortcuts, neutered getData) provide sufficient security.
+        /*
         (function() {
-            // Skip on mobile/tablet - screen dimensions are unreliable
             const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
             if (isMobile) return;
             
@@ -627,12 +629,12 @@ Security Features:
                 }
             };
             
-            // Delay start to avoid false positives during page load
             setTimeout(() => {
                 setInterval(checkDevTools, 1000);
                 window.addEventListener('resize', checkDevTools);
             }, 3000);
         })();
+        */
 
         // =============================================================
         // KEYBOARD SHORTCUT BLOCKING
