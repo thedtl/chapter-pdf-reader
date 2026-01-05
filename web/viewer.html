@@ -924,6 +924,16 @@ See https://github.com/adobe-type-tools/cmap-resources
         }
 
         // =============================================================
+        // SECURITY: DISABLE BACK BUTTON
+        // =============================================================
+        // Push a state so we can intercept back navigation
+        history.pushState(null, '', location.href);
+        window.addEventListener('popstate', function(e) {
+            // Push state again to trap user on this page
+            history.pushState(null, '', location.href);
+        });
+
+        // =============================================================
         // PARSE TOKEN FROM URL
         // =============================================================
         const urlParams = new URLSearchParams(window.location.search);
