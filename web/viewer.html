@@ -826,22 +826,48 @@ See https://github.com/adobe-type-tools/cmap-resources
         'use strict';
         
         // =============================================================
-        // SECURITY: DISABLE BACK BUTTON (Must be first!)
+        // SECURITY: BACK BUTTON SHOWS ERROR PAGE
         // =============================================================
-        (function blockBackButton() {
-            // Push state immediately
-            window.history.pushState({dtl: true}, '', window.location.href);
+        (function() {
+            // Push a state so we can detect back button
+            window.history.pushState({ dtlViewer: true }, '', window.location.href);
             
-            // Keep pushing state whenever user tries to go back
             window.addEventListener('popstate', function(e) {
-                window.history.pushState({dtl: true}, '', window.location.href);
-            });
-            
-            // Also warn on page unload as backup
-            window.addEventListener('beforeunload', function(e) {
-                e.preventDefault();
-                e.returnValue = '';
-                return '';
+                // Show error page when back is pressed
+                document.documentElement.innerHTML = `
+                    <head>
+                        <title>Session Ended | Digital Theological Library</title>
+                        <meta name="viewport" content="width=device-width, initial-scale=1">
+                        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+                        <style>
+                            * { box-sizing: border-box; margin: 0; padding: 0; }
+                            body { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); padding: 20px; }
+                            .card { background: white; padding: 48px 40px; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); text-align: center; max-width: 420px; width: 100%; }
+                            .icon { font-size: 56px; margin-bottom: 20px; }
+                            h1 { margin: 0 0 12px 0; color: #1f2937; font-size: 24px; font-weight: 700; }
+                            .message { color: #6b7280; margin: 0 0 28px 0; line-height: 1.6; }
+                            .catalog-prompt { color: #6b7280; margin: 0 0 16px 0; font-size: 14px; }
+                            .links { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+                            .btn { display: block; padding: 14px 24px; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; text-align: center; }
+                            .btn:hover { opacity: 0.9; }
+                            .btn-primary { background: #0061fe; }
+                            .btn-secondary { background: #10b981; }
+                            .help { font-size: 13px; color: #9ca3af; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="card">
+                            <div class="icon">🔒</div>
+                            <h1>Session Ended</h1>
+                            <p class="message">Your viewing session has ended. For security purposes, you cannot return to the document using the back button.</p>
+                            <p class="catalog-prompt">Return to our catalog to access resources:</p>
+                            <div class="links">
+                                <a href="https://libguides.thedtl.org/home" class="btn btn-primary">📖 DTL Catalog</a>
+                                <a href="https://dtl2.libguides.com/home" class="btn btn-secondary">📚 DTL2 Catalog</a>
+                            </div>
+                            <p class="help">Need help? Contact your librarian for assistance.</p>
+                        </div>
+                    </body>`;
             });
         })();
         
