@@ -123,6 +123,21 @@ Security Features:
         }
 
         // =============================================================
+        // NEW TAB/WINDOW DETECTION
+        // =============================================================
+        // history.length === 1 means no previous pages in this tab (opened in new tab/window)
+        const isLocalDev = ['localhost', '127.0.0.1'].includes(location.hostname);
+        if (window.history.length <= 1 && !isLocalDev) {
+            window.stop();
+            document.documentElement.innerHTML = createErrorPage(
+                '📑',
+                'Please Use the Same Tab',
+                'This resource needs to open in the same browser tab as the link. Please go back and click the link normally instead of opening it in a new tab or window.'
+            );
+            throw new Error("Access Denied: New tab detected");
+        }
+
+        // =============================================================
         // ERROR PAGE GENERATOR (Used throughout)
         // =============================================================
         function createErrorPage(icon, title, message) {
