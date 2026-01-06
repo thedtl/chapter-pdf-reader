@@ -7,51 +7,20 @@
   <meta name="google" content="notranslate" />
   <title>PDF.js viewer</title>
 
-  <!-- BACK BUTTON TRAP (UPDATED: GESTURE GATE + DTL COLORS) -->
+  <!-- BACK BUTTON TRAP (FIXED: SAFARI MULTI-BACK + DTL COLORS) -->
   <script>
     (function () {
       "use strict";
 
-      const SESSION_KEY = "dtlTrapArmed";
-      const DTL_RED = "#AF151B";
-      const DTL_BLUE = "#1A478C";
+      // DTL palette
+      const DTL_BLUE = "#154889";
+      const DTL_BLUE_HOVER = "#123F79";
+      const DTL_RED = "#AF161C";
+      const TEXT = "#1f2937";
+      const MUTED = "#6b7280";
 
-      // Helper to replace the page with the "Session Ended" screen
-      function renderSessionEnded() {
-        document.documentElement.innerHTML =
-          '<head>' +
-            '<title>Session Ended | Digital Theological Library</title>' +
-            '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-            '<style>' +
-              '* { box-sizing: border-box; margin: 0; padding: 0; }' +
-              'body { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); padding: 20px; }' +
-              '.card { background: white; padding: 48px 40px; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); text-align: center; max-width: 420px; width: 100%; }' +
-              '.icon { font-size: 56px; margin-bottom: 20px; }' +
-              'h1 { margin: 0 0 12px 0; color: #1f2937; font-size: 24px; font-weight: 700; }' +
-              '.message { color: #6b7280; margin: 0 0 28px 0; line-height: 1.6; }' +
-              '.links { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }' +
-              '.btn { display: block; padding: 14px 24px; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; text-align: center; }' +
-              '.btn-primary { background: ' + DTL_RED + '; }' +
-              '.btn-secondary { background: ' + DTL_BLUE + '; }' +
-              '.help { font-size: 13px; color: #9ca3af; }' +
-            '</style>' +
-          '</head>' +
-          '<body>' +
-            '<div class="card">' +
-              '<div class="icon">🔒</div>' +
-              '<h1>Session Ended</h1>' +
-              '<p class="message">Your viewing session has ended. For security purposes, you cannot return to the document using the back button.</p>' +
-              '<div class="links">' +
-                '<a href="https://libguides.thedtl.org/home" class="btn btn-primary">📖 DTL Catalog</a>' +
-                '<a href="https://dtl2.libguides.com/home" class="btn btn-secondary">📚 DTL2 Catalog</a>' +
-              '</div>' +
-              '<p class="help">Need help? Contact your librarian for assistance.</p>' +
-            '</div>' +
-          '</body>';
-        
-        // Stop any further JS execution
-        window.stop();
-      }
+      const SESSION_KEY = "dtlTrapArmed";
+      const BUFFER_STATES = 25; // how many Back presses you can absorb
 
       function isArmed() {
         try {
@@ -61,19 +30,46 @@
         }
       }
 
-      // This must be called inside a user-triggered event (click)
+      // Keep this as an overlay (don’t nuke <html>), so the popstate listener remains reliable.
+      function showSessionEndedOverlay() {
+        if (document.getElementById("dtl-session-ended-overlay")) return;
+
+        const overlay = document.createElement("div");
+        overlay.id = "dtl-session-ended-overlay";
+        overlay.style.cssText =
+          "position:fixed;inset:0;z-index:2147483647;" +
+          "background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;" +
+          "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px;";
+
+        overlay.innerHTML =
+          '<div style="background:white;max-width:460px;width:100%;border-radius:16px;padding:38px 30px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">' +
+            '<div style="font-size:56px;margin-bottom:14px;">🔒</div>' +
+            '<div style="font-size:22px;font-weight:800;color:' + TEXT + ';margin-bottom:10px;">Session Ended</div>' +
+            '<div style="color:' + MUTED + ';line-height:1.6;margin-bottom:18px;">Your viewing session has ended. For security purposes, you cannot return to the document using the back button.</div>' +
+            '<div style="display:flex;flex-direction:column;gap:12px;margin-top:18px;">' +
+              '<a href="https://libguides.thedtl.org/home" style="display:block;padding:14px 18px;border-radius:10px;background:' + DTL_BLUE + ';color:white;text-decoration:none;font-weight:800;">📖 DTL Catalog</a>' +
+              '<a href="https://dtl2.libguides.com/home" style="display:block;padding:14px 18px;border-radius:10px;background:' + DTL_RED + ';color:white;text-decoration:none;font-weight:800;">📚 DTL2 Catalog</a>' +
+            "</div>" +
+            '<div style="color:#9ca3af;font-size:12px;margin-top:14px;line-height:1.5;">Need help? Contact your librarian for assistance.</div>' +
+          "</div>";
+
+        document.body.appendChild(overlay);
+      }
+
+      // IMPORTANT: build the buffer *inside the user click*.
+      // Safari may skip history entries created without a user gesture.
       function armTrapWithGesture() {
         try {
-          // 1. Replace current state to establish a base, preserving existing PDF.js state
-          const base = Object.assign({}, history.state || {}, { dtlTrap: 0 });
-          history.replaceState(base, "", location.href);
+          // Establish a base state
+          history.replaceState({ dtlTrap: true, i: 0 }, "", location.href);
 
-          // 2. Push a new state. Because this is inside a click, Safari respects it.
-          const armed = Object.assign({}, base, { dtlTrap: 1 });
-          history.pushState(armed, "", location.href);
-          
+          // Push a buffer of states while we still have a user activation
+          for (let i = 1; i <= BUFFER_STATES; i++) {
+            history.pushState({ dtlTrap: true, i }, "", location.href);
+          }
+
           sessionStorage.setItem(SESSION_KEY, "1");
-          console.log("[DTL] Back trap armed via gesture.");
+          console.log("[DTL] Back trap armed via gesture with buffer:", BUFFER_STATES);
         } catch (e) {
           console.warn("[DTL] Failed to arm trap:", e);
         }
@@ -82,55 +78,39 @@
       function handlePopState(evt) {
         if (!isArmed()) return;
 
+        // DO NOT pushState here (not a gesture) — that’s the Safari multi-back failure mode.
         console.log("[DTL] popstate fired, ending session.");
-        
-        // Push state again to keep them trapped if they spam Back
-        try {
-          const armed = Object.assign({}, history.state || {}, { dtlTrap: 1 });
-          history.pushState(armed, "", location.href);
-        } catch (e) {}
-
-        renderSessionEnded();
+        showSessionEndedOverlay();
       }
 
-      // Listen for the back button
       window.addEventListener("popstate", handlePopState);
 
-      // Handle Back-Forward Cache (bfcache) restores
+      // If Safari restores from bfcache, immediately end the session view.
       window.addEventListener("pageshow", function (event) {
         if (isArmed() && event && event.persisted) {
           console.log("[DTL] Restored from bfcache, ending session.");
-          renderSessionEnded();
+          showSessionEndedOverlay();
         }
       });
 
-      // Create the "Start Reading" overlay
+      // Gesture gate
       function showGestureGate() {
-        // We do NOT return early if isArmed() is true. 
-        // If the user refreshed, isArmed is true, but the history stack is reset.
-        // We must show the gate again to force a click and re-arm the history stack.
-        const alreadyArmed = isArmed();
-
-        const gateTitle = alreadyArmed ? "Resume Session" : "Start Reading";
-        const gateBtnText = alreadyArmed ? "Resume Session" : "Begin Session";
-        const gateMsg = alreadyArmed
-          ? "Click below to resume your secure session."
-          : "Click below to begin your secure viewing session.";
+        // If already armed, don’t force the gate again.
+        if (isArmed()) return;
 
         const gate = document.createElement("div");
         gate.id = "dtl-gesture-gate";
         gate.style.cssText =
           "position:fixed;inset:0;z-index:2147483647;" +
           "background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;" +
-          "font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:20px;" +
-          "transition:opacity 0.2s;"; // Added transition
+          "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px;";
 
         gate.innerHTML =
           '<div style="background:white;max-width:460px;width:100%;border-radius:16px;padding:34px 28px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">' +
             '<div style="font-size:52px;margin-bottom:14px;">📖</div>' +
-            '<div style="font-size:22px;font-weight:800;color:#111827;margin-bottom:10px;">' + gateTitle + '</div>' +
-            '<div style="color:#6b7280;line-height:1.6;margin-bottom:18px;">' + gateMsg + '</div>' +
-            '<button id="dtl-start-reading" style="width:100%;padding:14px 18px;border:0;border-radius:10px;background:' + DTL_RED + ';color:white;font-weight:700;font-size:15px;cursor:pointer;transition:background 0.2s;">' + gateBtnText + '</button>' +
+            '<div style="font-size:22px;font-weight:800;color:' + TEXT + ';margin-bottom:10px;">Start Reading</div>' +
+            '<div style="color:' + MUTED + ';line-height:1.6;margin-bottom:18px;">Click below to begin your secure viewing session.</div>' +
+            '<button id="dtl-start-reading" style="width:100%;padding:14px 18px;border:0;border-radius:10px;background:' + DTL_BLUE + ';color:white;font-weight:800;font-size:15px;cursor:pointer;">Begin Session</button>' +
             '<div style="color:#9ca3af;font-size:12px;margin-top:12px;line-height:1.5;">Using the browser back button ends the session.</div>' +
           "</div>";
 
@@ -138,11 +118,23 @@
           document.body.appendChild(gate);
           const btn = gate.querySelector("#dtl-start-reading");
           if (btn) {
-            btn.addEventListener("click", function () {
-              armTrapWithGesture();
-              gate.style.opacity = '0';
-              setTimeout(function() { gate.remove(); }, 200);
-            }, { once: true });
+            btn.addEventListener(
+              "click",
+              function () {
+                armTrapWithGesture();
+                gate.style.opacity = "0";
+                setTimeout(function () {
+                  gate.remove();
+                }, 200);
+              },
+              { once: true }
+            );
+            btn.addEventListener("mouseenter", function () {
+              btn.style.background = DTL_BLUE_HOVER;
+            });
+            btn.addEventListener("mouseleave", function () {
+              btn.style.background = DTL_BLUE;
+            });
           }
         }
 
@@ -150,7 +142,6 @@
         else document.addEventListener("DOMContentLoaded", attach, { once: true });
       }
 
-      // Initialize
       if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", showGestureGate, { once: true });
       } else {
