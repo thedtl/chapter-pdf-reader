@@ -1048,17 +1048,23 @@ See https://github.com/adobe-type-tools/cmap-resources
         var isLocalDev = ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1;
         
         // =============================================================
-        // SECURITY CHECK: REFERRER
+        // SECURITY CHECK: REFERRER & NEW TAB DETECTION
         // =============================================================
         var referrer = document.referrer || "";
         if (!referrer && window.location.ancestorOrigins && window.location.ancestorOrigins.length > 0) {
             referrer = window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1];
         }
         
-        // Check if no referrer (opened in new tab directly)
+        // Check if no referrer (opened in new tab directly - Safari)
         if (!referrer && !isLocalDev) {
             showErrorPage('🚫', 'New Tab Not Allowed', 'For copyright protection, this resource cannot be opened in a new tab. Please click the link directly from the chapter list.');
             throw new Error("Access Denied: No Referrer (new tab)");
+        }
+        
+        // Check if opened in new tab (Chrome/Firefox still send referrer but history.length is 1)
+        if (window.history.length <= 1 && !isLocalDev) {
+            showErrorPage('🚫', 'New Tab Not Allowed', 'For copyright protection, this resource cannot be opened in a new tab. Please click the link directly from the chapter list.');
+            throw new Error("Access Denied: New tab detected (history.length)");
         }
         
         // Check if referrer is from allowed source
