@@ -30,7 +30,9 @@ See https://github.com/adobe-type-tools/cmap-resources
 <!-- DTL: Hide sidebar toggle button and sidebar -->
 <style>
   #sidebarToggleButton,
-  #sidebarContainer {
+  #sidebarContainer,
+  #viewBookmark,
+  #viewBookmarkSeparator {
     display: none !important;
   }
 </style>
@@ -1053,11 +1055,18 @@ See https://github.com/adobe-type-tools/cmap-resources
             referrer = window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1];
         }
         
-        var isAllowedReferrer = !referrer || ALLOWED_HOSTS.some(function(host) {
+        // Check if no referrer (opened in new tab directly)
+        if (!referrer && !isLocalDev) {
+            showErrorPage('🚫', 'New Tab Not Allowed', 'For copyright protection, this resource cannot be opened in a new tab. Please click the link directly from the library catalog.');
+            throw new Error("Access Denied: No Referrer (new tab)");
+        }
+        
+        // Check if referrer is from allowed source
+        var isAllowedReferrer = isLocalDev || ALLOWED_HOSTS.some(function(host) {
             try { var refHost = new URL(referrer).hostname; return refHost === host || refHost.endsWith('.' + host); } catch (e) { return false; }
         });
         
-        if (!isAllowedReferrer && !isLocalDev) {
+        if (!isAllowedReferrer) {
             showErrorPage('🔗', 'Invalid Link Source', 'This resource must be accessed through the library website.');
             throw new Error("Access Denied: Invalid Referrer");
         }
@@ -1118,8 +1127,34 @@ See https://github.com/adobe-type-tools/cmap-resources
                     e.preventDefault(); e.stopPropagation(); return false;
                 }
             }, true);
-            document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
         }
+        
+        // Always block right-click (prevents "Open in new tab" option)
+        document.addEventListener('contextmenu', function(e) { e.preventDefault(); }, true);
+
+        // =============================================================
+        // BLOCK OPENING IN NEW TAB
+        // =============================================================
+        // Block middle-click (opens in new tab)
+        document.addEventListener('auxclick', function(e) {
+            if (e.button === 1) { // Middle mouse button
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, true);
+
+        // Block Ctrl+click and Cmd+click (opens in new tab)
+        document.addEventListener('click', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, true);
+
+        // Disable drag (prevents dragging links to new tab)
+        document.addEventListener('dragstart', function(e) {
+            e.preventDefault();
+        }, true);
 
         // =============================================================
         // END OF CHAPTER CARD
@@ -1240,4 +1275,3 @@ See https://github.com/adobe-type-tools/cmap-resources
     </script>
   </body>
 </html>
-
