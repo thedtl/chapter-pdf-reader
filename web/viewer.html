@@ -50,7 +50,7 @@ See https://github.com/adobe-type-tools/cmap-resources
   const MUTED = "#6b7280";
 
   const SESSION_KEY = "dtlTrapArmed";
-  const BUFFER_STATES = 25; // how many Back presses you can absorb
+  const BUFFER_STATES = 200; // how many Back presses you can absorb
 
   function isArmed() {
     try {
@@ -108,9 +108,14 @@ See https://github.com/adobe-type-tools/cmap-resources
   function handlePopState(evt) {
     if (!isArmed()) return;
 
-    // DO NOT pushState here (not a gesture) — that's the Safari multi-back failure mode.
     console.log("[DTL] popstate fired, ending session.");
     showSessionEndedOverlay();
+    
+    // Push user all the way forward in the history buffer
+    // This makes it very hard to escape by repeated back presses
+    try {
+      history.go(BUFFER_STATES);
+    } catch (e) {}
   }
 
   window.addEventListener("popstate", handlePopState);
