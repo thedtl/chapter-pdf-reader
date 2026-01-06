@@ -7,12 +7,14 @@
   <meta name="google" content="notranslate" />
   <title>PDF.js viewer</title>
 
-  <!-- BACK BUTTON TRAP (UPDATED: GESTURE GATE) -->
+  <!-- BACK BUTTON TRAP (UPDATED: GESTURE GATE + DTL COLORS) -->
   <script>
     (function () {
       "use strict";
 
       const SESSION_KEY = "dtlTrapArmed";
+      const DTL_RED = "#AF151B";
+      const DTL_BLUE = "#1A478C";
 
       // Helper to replace the page with the "Session Ended" screen
       function renderSessionEnded() {
@@ -29,8 +31,8 @@
               '.message { color: #6b7280; margin: 0 0 28px 0; line-height: 1.6; }' +
               '.links { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }' +
               '.btn { display: block; padding: 14px 24px; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; text-align: center; }' +
-              '.btn-primary { background: #0061fe; }' +
-              '.btn-secondary { background: #10b981; }' +
+              '.btn-primary { background: ' + DTL_RED + '; }' +
+              '.btn-secondary { background: ' + DTL_BLUE + '; }' +
               '.help { font-size: 13px; color: #9ca3af; }' +
             '</style>' +
           '</head>' +
@@ -62,10 +64,13 @@
       // This must be called inside a user-triggered event (click)
       function armTrapWithGesture() {
         try {
-          // 1. Replace current state to establish a base
-          history.replaceState({ dtlTrap: 0 }, "", location.href);
+          // 1. Replace current state to establish a base, preserving existing PDF.js state
+          const base = Object.assign({}, history.state || {}, { dtlTrap: 0 });
+          history.replaceState(base, "", location.href);
+
           // 2. Push a new state. Because this is inside a click, Safari respects it.
-          history.pushState({ dtlTrap: 1 }, "", location.href);
+          const armed = Object.assign({}, base, { dtlTrap: 1 });
+          history.pushState(armed, "", location.href);
           
           sessionStorage.setItem(SESSION_KEY, "1");
           console.log("[DTL] Back trap armed via gesture.");
@@ -81,7 +86,8 @@
         
         // Push state again to keep them trapped if they spam Back
         try {
-          history.pushState({ dtlTrap: 1 }, "", location.href);
+          const armed = Object.assign({}, history.state || {}, { dtlTrap: 1 });
+          history.pushState(armed, "", location.href);
         } catch (e) {}
 
         renderSessionEnded();
@@ -100,22 +106,31 @@
 
       // Create the "Start Reading" overlay
       function showGestureGate() {
-        // If we are already armed (e.g. page refresh), don't show gate, just re-arm logic if needed
-        if (isArmed()) return;
+        // We do NOT return early if isArmed() is true. 
+        // If the user refreshed, isArmed is true, but the history stack is reset.
+        // We must show the gate again to force a click and re-arm the history stack.
+        const alreadyArmed = isArmed();
+
+        const gateTitle = alreadyArmed ? "Resume Session" : "Start Reading";
+        const gateBtnText = alreadyArmed ? "Resume Session" : "Begin Session";
+        const gateMsg = alreadyArmed
+          ? "Click below to resume your secure session."
+          : "Click below to begin your secure viewing session.";
 
         const gate = document.createElement("div");
         gate.id = "dtl-gesture-gate";
         gate.style.cssText =
           "position:fixed;inset:0;z-index:2147483647;" +
           "background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;" +
-          "font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:20px;";
+          "font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:20px;" +
+          "transition:opacity 0.2s;"; // Added transition
 
         gate.innerHTML =
           '<div style="background:white;max-width:460px;width:100%;border-radius:16px;padding:34px 28px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">' +
             '<div style="font-size:52px;margin-bottom:14px;">📖</div>' +
-            '<div style="font-size:22px;font-weight:800;color:#111827;margin-bottom:10px;">Start Reading</div>' +
-            '<div style="color:#6b7280;line-height:1.6;margin-bottom:18px;">Click below to begin your secure viewing session.</div>' +
-            '<button id="dtl-start-reading" style="width:100%;padding:14px 18px;border:0;border-radius:10px;background:#0061fe;color:white;font-weight:700;font-size:15px;cursor:pointer;transition:background 0.2s;">Begin Session</button>' +
+            '<div style="font-size:22px;font-weight:800;color:#111827;margin-bottom:10px;">' + gateTitle + '</div>' +
+            '<div style="color:#6b7280;line-height:1.6;margin-bottom:18px;">' + gateMsg + '</div>' +
+            '<button id="dtl-start-reading" style="width:100%;padding:14px 18px;border:0;border-radius:10px;background:' + DTL_RED + ';color:white;font-weight:700;font-size:15px;cursor:pointer;transition:background 0.2s;">' + gateBtnText + '</button>' +
             '<div style="color:#9ca3af;font-size:12px;margin-top:12px;line-height:1.5;">Using the browser back button ends the session.</div>' +
           "</div>";
 
@@ -737,8 +752,8 @@ h1 { margin: 0 0 12px 0; color: #1f2937; font-size: 24px; font-weight: 700; }\
 .message { color: #6b7280; margin: 0 0 28px 0; line-height: 1.6; }\
 .links { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }\
 .btn { display: block; padding: 14px 24px; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; text-align: center; }\
-.btn-primary { background: #0061fe; }\
-.btn-secondary { background: #10b981; }\
+.btn-primary { background: #AF151B; }\
+.btn-secondary { background: #1A478C; }\
 .help { font-size: 13px; color: #9ca3af; }\
 </style>\
 </head>\
@@ -899,7 +914,7 @@ h1 { margin: 0 0 12px 0; color: #1f2937; font-size: 24px; font-weight: 700; }\
 
         var card = document.createElement('div');
         card.id = 'dtl-chapter-end-card';
-        card.innerHTML = '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;justify-content:center;align-items:center;z-index:99999;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:20px;"><div style="background:white;padding:40px;border-radius:16px;text-align:center;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);"><div style="font-size:48px;margin-bottom:16px;">📖</div><h2 style="margin:0 0 12px 0;color:#333;font-size:24px;">' + title + '</h2><p style="color:#666;margin:0 0 16px 0;line-height:1.6;">' + message + '</p><div style="background:#f5f5f5;padding:12px 20px;border-radius:8px;color:#888;font-size:14px;margin-bottom:24px;">' + pageInfo + '</div><button id="dtl-end-card-close" style="padding:12px 28px;background:#0061fe;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:20px;width:100%;">Continue Reading</button><div style="border-top:1px solid #eee;padding-top:20px;"><p style="color:#888;font-size:13px;margin-bottom:12px;">Looking for more? Browse our catalogs:</p><div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;"><a href="https://libguides.thedtl.org/home" target="_blank" style="color:#0061fe;text-decoration:none;font-size:14px;font-weight:500;">📖 DTL Catalog</a><a href="https://dtl2.libguides.com/home" target="_blank" style="color:#10b981;text-decoration:none;font-size:14px;font-weight:500;">📚 DTL2 Catalog</a></div></div></div></div>';
+        card.innerHTML = '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;justify-content:center;align-items:center;z-index:99999;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:20px;"><div style="background:white;padding:40px;border-radius:16px;text-align:center;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);"><div style="font-size:48px;margin-bottom:16px;">📖</div><h2 style="margin:0 0 12px 0;color:#333;font-size:24px;">' + title + '</h2><p style="color:#666;margin:0 0 16px 0;line-height:1.6;">' + message + '</p><div style="background:#f5f5f5;padding:12px 20px;border-radius:8px;color:#888;font-size:14px;margin-bottom:24px;">' + pageInfo + '</div><button id="dtl-end-card-close" style="padding:12px 28px;background:#AF151B;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:20px;width:100%;">Continue Reading</button><div style="border-top:1px solid #eee;padding-top:20px;"><p style="color:#888;font-size:13px;margin-bottom:12px;">Looking for more? Browse our catalogs:</p><div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;"><a href="https://libguides.thedtl.org/home" target="_blank" style="color:#1A478C;text-decoration:none;font-size:14px;font-weight:500;">📖 DTL Catalog</a><a href="https://dtl2.libguides.com/home" target="_blank" style="color:#AF151B;text-decoration:none;font-size:14px;font-weight:500;">📚 DTL2 Catalog</a></div></div></div></div>';
         document.body.appendChild(card);
 
         document.getElementById('dtl-end-card-close').onclick = function() {
