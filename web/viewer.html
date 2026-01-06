@@ -1057,7 +1057,7 @@ See https://github.com/adobe-type-tools/cmap-resources
         
         // Check if no referrer (opened in new tab directly)
         if (!referrer && !isLocalDev) {
-            showErrorPage('🚫', 'New Tab Not Allowed', 'For copyright protection, this resource cannot be opened in a new tab. Please click the link directly from the library catalog.');
+            showErrorPage('🚫', 'New Tab Not Allowed', 'For copyright protection, this resource cannot be opened in a new tab. Please click the link directly from the chapter list.');
             throw new Error("Access Denied: No Referrer (new tab)");
         }
         
