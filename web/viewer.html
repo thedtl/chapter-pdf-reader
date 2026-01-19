@@ -165,6 +165,11 @@ See https://github.com/adobe-type-tools/cmap-resources
   // =============================================================
   // POPSTATE HANDLER
   // =============================================================
+  
+  // Detect Firefox (handles history differently during popstate)
+  const isFirefox = typeof navigator !== 'undefined' && 
+    /Firefox/i.test(navigator.userAgent);
+  
   function handlePopState(evt) {
     if (!isArmed()) return;
 
@@ -172,9 +177,19 @@ See https://github.com/adobe-type-tools/cmap-resources
     showSessionEndedOverlay();
     
     // Push user forward in the history buffer
-    try {
-      history.go(BUFFER_STATES);
-    } catch (e) {}
+    // Firefox needs a delay to properly render the overlay before history manipulation
+    if (isFirefox) {
+      // In Firefox, delay history restoration to ensure overlay renders
+      setTimeout(function() {
+        try {
+          history.go(BUFFER_STATES);
+        } catch (e) {}
+      }, 50);
+    } else {
+      try {
+        history.go(BUFFER_STATES);
+      } catch (e) {}
+    }
   }
 
   window.addEventListener("popstate", handlePopState);
