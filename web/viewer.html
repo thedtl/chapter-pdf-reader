@@ -139,12 +139,16 @@ See https://github.com/adobe-type-tools/cmap-resources
   // =============================================================
   function armTrapWithGesture() {
     try {
+      // Get base URL without any existing hash
+      const baseUrl = location.href.split('#')[0];
+      
       // Establish a base state
-      history.replaceState({ dtlTrap: true, i: 0 }, "", location.href);
+      history.replaceState({ dtlTrap: true, i: 0 }, "", baseUrl + '#dtl0');
 
-      // Push a buffer of states while we still have user activation
+      // Push a buffer of states with unique hashes
+      // Firefox requires distinct URLs to enable the back button
       for (let i = 1; i <= BUFFER_STATES; i++) {
-        history.pushState({ dtlTrap: true, i }, "", location.href);
+        history.pushState({ dtlTrap: true, i }, "", baseUrl + '#dtl' + i);
       }
 
       trapArmedThisSession = true;
@@ -1259,9 +1263,9 @@ See https://github.com/adobe-type-tools/cmap-resources
             }
         }, true);
 
-        // Block Ctrl+click and Cmd+click (opens in new tab)
+        // Block Ctrl+click, Cmd+click, and Shift+click (opens in new tab/window)
         document.addEventListener('click', function(e) {
-            if (e.ctrlKey || e.metaKey) {
+            if (e.ctrlKey || e.metaKey || e.shiftKey) {
                 e.preventDefault();
                 e.stopPropagation();
             }
