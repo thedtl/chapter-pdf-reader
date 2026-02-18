@@ -1336,7 +1336,7 @@ See https://github.com/adobe-type-tools/cmap-resources
                     // If the worker already extracted just the chapter pages,
                     // the token's page numbers will be bigger than the PDF.
                     // No restrictions needed — the whole PDF IS the chapter.
-                    if (c.chapterStart > totalPages) {
+                    if (c.chapterEnd > totalPages || c.chapterStart > totalPages) {
                         console.log('[DTL] Chapter pages already extracted by worker — no restrictions needed');
                         c.isRestricted = false;
                         return;
