@@ -1332,6 +1332,16 @@ See https://github.com/adobe-type-tools/cmap-resources
                     }
 
                     var c = window.DTL_CHAPTER;
+                    
+                    // If the worker already extracted just the chapter pages,
+                    // the token's page numbers will be bigger than the PDF.
+                    // Reset to cover the whole (already-extracted) PDF.
+                    if (c.chapterStart > totalPages) {
+                        console.log('[DTL] Chapter pages already extracted by worker — resetting to 1-' + totalPages);
+                        c.chapterStart = 1;
+                        c.chapterEnd = totalPages;
+                    }
+
                     var validStart = Math.max(1, Math.min(c.chapterStart, totalPages));
                     var validEnd = Math.max(validStart, Math.min(c.chapterEnd, totalPages));
                     c.chapterStart = validStart;
