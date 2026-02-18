@@ -1332,18 +1332,6 @@ See https://github.com/adobe-type-tools/cmap-resources
                     }
 
                     var c = window.DTL_CHAPTER;
-                    
-                    // If the worker already extracted just the chapter pages,
-                    // the whole PDF IS the chapter — no restrictions needed.
-                    // Detect this by checking if token page numbers exceed the PDF,
-                    // OR if the expected chapter length matches the PDF length.
-                    var expectedLength = c.chapterEnd - c.chapterStart + 1;
-                    if (c.chapterEnd > totalPages || c.chapterStart > totalPages || expectedLength === totalPages) {
-                        console.log('[DTL] Chapter pages already extracted by worker — no restrictions needed');
-                        c.isRestricted = false;
-                        return;
-                    }
-
                     var validStart = Math.max(1, Math.min(c.chapterStart, totalPages));
                     var validEnd = Math.max(validStart, Math.min(c.chapterEnd, totalPages));
                     c.chapterStart = validStart;
@@ -1372,16 +1360,38 @@ See https://github.com/adobe-type-tools/cmap-resources
                     updatePageDisplay(validStart);
 
                     // Navigation guard
+                    // On first load, pdf.js may override our app.page call
+                    // (e.g. restoring last viewed page). So we silently redirect
+                    // the first time without showing any card. Cards only appear
+                    // for subsequent (user-initiated) out-of-range navigation.
+                    var initialNav = true;
+                    
                     app.eventBus.on('pagechanging', function(evt) {
                         var page = evt.pageNumber;
+                        
+                        if (page >= validStart && page <= validEnd) {
+                            // Page is in range — everything is fine
+                            initialNav = false;
+                            updatePageDisplay(page);
+                            return;
+                        }
+                        
+                        if (initialNav) {
+                            // First navigation is outside range — pdf.js overrode us.
+                            // Silently redirect to chapter start, no card.
+                            initialNav = false;
+                            console.log('[DTL] Initial page ' + page + ' outside chapter range — silently redirecting to ' + validStart);
+                            setTimeout(function() { app.page = validStart; updatePageDisplay(validStart); }, 50);
+                            return;
+                        }
+                        
+                        // User-initiated navigation outside range — show card
                         if (page < validStart) {
                             setTimeout(function() { app.page = validStart; updatePageDisplay(validStart); }, 0);
                             showEndCard('start');
                         } else if (page > validEnd) {
                             setTimeout(function() { app.page = validEnd; updatePageDisplay(validEnd); }, 0);
                             showEndCard('end');
-                        } else {
-                            updatePageDisplay(page);
                         }
                     });
 
