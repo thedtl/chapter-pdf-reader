@@ -1161,45 +1161,11 @@ See https://github.com/adobe-type-tools/cmap-resources
         // =============================================================
         var ALLOWED_HOSTS = ["thedtl.org", "thedtl.github.io", "oclc.org", "libapps.com", "libguides.com", "springshare.com", "localhost", "127.0.0.1"];
         var isLocalDev = ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1;
-        
-        // =============================================================
-        // SECURITY CHECK: REFERRER & NEW TAB/WINDOW DETECTION
-        // =============================================================
-        var referrer = document.referrer || "";
-        if (!referrer && window.location.ancestorOrigins && window.location.ancestorOrigins.length > 0) {
-            referrer = window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1];
-        }
-        
-        // Detect Firefox (handles history.length differently for new windows)
-        var isFirefoxBrowser = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
-        
-        // Check if no referrer (opened in new tab directly - Safari)
-        if (!referrer && !isLocalDev) {
-            showErrorPage('🚫', 'New Tab/Window Not Allowed', 'For copyright protection, this resource cannot be opened in a new tab or window. Please click the link directly from the chapter list.');
-            throw new Error("Access Denied: No Referrer (new tab/window)");
-        }
-        
-        // Check if opened in new tab/window
-        // Chrome/Safari: history.length === 1 for new tabs/windows
-        // Firefox: history.length can be 1 OR 2 for new windows opened via context menu
-        var historyThreshold = isFirefoxBrowser ? 2 : 1;
-        if (window.history.length <= historyThreshold && !isLocalDev) {
-            showErrorPage('🚫', 'New Tab/Window Not Allowed', 'For copyright protection, this resource cannot be opened in a new tab or window. Please click the link directly from the chapter list.');
-            throw new Error("Access Denied: New tab/window detected (history.length)");
-        }
-        
-        // Check if referrer is from allowed source
-        var isAllowedReferrer = isLocalDev || ALLOWED_HOSTS.some(function(host) {
-            try { var refHost = new URL(referrer).hostname; return refHost === host || refHost.endsWith('.' + host); } catch (e) { return false; }
-        });
-        
-        if (!isAllowedReferrer) {
-            showErrorPage('🔗', 'Invalid Link Source', 'This resource must be accessed through the library website.');
-            throw new Error("Access Denied: Invalid Referrer");
-        }
 
         // =============================================================
         // PARSE TOKEN FROM URL
+        // Parse before access checks so access validation and diagnostics
+        // can rely on the same token state.
         // =============================================================
         var urlParams = new URLSearchParams(window.location.search);
         var token = urlParams.get('token');
@@ -1207,6 +1173,58 @@ See https://github.com/adobe-type-tools/cmap-resources
         if (!token && fileParam) token = extractTokenFromFile(fileParam);
 
         var payload = token ? decodeToken(token) : null;
+
+        // =============================================================
+        // SECURITY CHECK: REFERRER, TOKEN & NEW TAB/WINDOW DETECTION
+        // =============================================================
+        var referrer = document.referrer || "";
+        if (!referrer && window.location.ancestorOrigins && window.location.ancestorOrigins.length > 0) {
+            referrer = window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1];
+        }
+
+        // Diagnostic only. Do not use history.length as a blocking signal.
+        // Firefox can report history.length === 2 for a normal same-tab click,
+        // so using <= 2 creates false "New Tab/Window Not Allowed" blocks.
+        try {
+            console.log('[DTL] Access check:', {
+                browser: navigator.userAgent,
+                referrer: referrer,
+                ancestorOrigins: window.location.ancestorOrigins ? Array.from(window.location.ancestorOrigins) : [],
+                historyLength: window.history.length,
+                hasToken: !!token,
+                tokenDecoded: !!payload,
+                location: window.location.href
+            });
+        } catch (e) {}
+
+        // Direct access/new-tab loads often have no referrer. This is a much
+        // stronger signal than history.length and avoids the Firefox false positive.
+        if (!referrer && !isLocalDev) {
+            showErrorPage('🚫', 'New Tab/Window Not Allowed', 'For copyright protection, this resource cannot be opened directly. Please click the link from the chapter list.');
+            throw new Error("Access Denied: No Referrer");
+        }
+
+        // Check if referrer is from an allowed source.
+        var isAllowedReferrer = isLocalDev || ALLOWED_HOSTS.some(function(host) {
+            try {
+                var refHost = new URL(referrer).hostname;
+                return refHost === host || refHost.endsWith('.' + host);
+            } catch (e) {
+                return false;
+            }
+        });
+
+        if (!isAllowedReferrer) {
+            showErrorPage('🔗', 'Invalid Link Source', 'This resource must be accessed through the library website.');
+            throw new Error("Access Denied: Invalid Referrer");
+        }
+
+        // Token-based access should fail closed. This prevents a copied URL
+        // without a valid token from becoming an unrestricted full-document viewer.
+        if ((!token || !payload) && !isLocalDev) {
+            showErrorPage('🔐', 'Invalid Access Token', 'This secure viewing link is missing or invalid. Please return to the chapter list and open the resource again.');
+            throw new Error("Access Denied: Missing or invalid token");
+        }
         
         // Store config globally
         window.DTL_CHAPTER = {
@@ -1260,27 +1278,38 @@ See https://github.com/adobe-type-tools/cmap-resources
         document.addEventListener('contextmenu', function(e) { e.preventDefault(); }, true);
 
         // =============================================================
-        // BLOCK OPENING IN NEW TAB
+        // BLOCK OPENING LINKS IN NEW TAB
         // =============================================================
-        // Block middle-click (opens in new tab)
+        function getClickedLink(target) {
+            if (!target || typeof target.closest !== 'function') return null;
+            return target.closest('a[href], area[href]');
+        }
+
+        // Block middle-click on links, which opens links in a new tab.
         document.addEventListener('auxclick', function(e) {
-            if (e.button === 1) { // Middle mouse button
+            if (e.button === 1 && getClickedLink(e.target)) {
                 e.preventDefault();
                 e.stopPropagation();
+                return false;
             }
         }, true);
 
-        // Block Ctrl+click, Cmd+click, and Shift+click (opens in new tab/window)
+        // Block Ctrl+click, Cmd+click, Shift+click, and Alt+click on links.
         document.addEventListener('click', function(e) {
-            if (e.ctrlKey || e.metaKey || e.shiftKey) {
+            if (getClickedLink(e.target) && (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey)) {
                 e.preventDefault();
                 e.stopPropagation();
+                return false;
             }
         }, true);
 
-        // Disable drag (prevents dragging links to new tab)
+        // Disable dragging links to a new tab without blocking all non-link dragging.
         document.addEventListener('dragstart', function(e) {
-            e.preventDefault();
+            if (getClickedLink(e.target)) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
         }, true);
 
         // =============================================================
