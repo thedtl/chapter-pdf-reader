@@ -1339,359 +1339,112 @@ See https://github.com/adobe-type-tools/cmap-resources
         // MAIN: APPLY CHAPTER RESTRICTIONS AFTER PDF LOADS
         // =============================================================
         function enforceChapterRestrictions() {
-            var c = window.DTL_CHAPTER || {};
-            var isRestricted = !!c.isRestricted;
-            var app = null;
-            var totalPages = null;
-            var validStart = null;
-            var validEnd = null;
-            var chapterLength = null;
-            var pageInput = null;
-            var numPagesEl = null;
-            var isUserEditing = false;
-            var restrictionArmed = false;
-            var busAttached = false;
-            var mutationObserver = null;
-            var restrictPagesTimer = null;
-            var firstValidNavigationSeen = false;
+            var checkReady = setInterval(function() {
+                if (window.PDFViewerApplication && window.PDFViewerApplication.pdfDocument) {
+                    clearInterval(checkReady);
+                    
+                    var app = window.PDFViewerApplication;
+                    var pdfDoc = app.pdfDocument;
+                    var totalPages = pdfDoc.numPages;
+                    window.DTL_CHAPTER.totalPages = totalPages;
 
-            // Important: never fail open. For restricted chapters, cover the viewer
-            // until the range guard has been installed. Large PDFs can take longer
-            // than 30 seconds to expose PDFViewerApplication.pdfDocument, so the old
-            // fixed timeout could leave the full book available.
-            function showPreparingOverlay() {
-                if (!isRestricted || document.getElementById('dtl-preparing-chapter-overlay')) return;
-                if (!document.body) return;
-
-                var overlay = document.createElement('div');
-                overlay.id = 'dtl-preparing-chapter-overlay';
-                overlay.style.cssText =
-                    'position:fixed;inset:0;z-index:2147483646;' +
-                    'background:rgba(0,0,0,0.86);display:flex;align-items:center;justify-content:center;' +
-                    'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:20px;';
-                overlay.innerHTML =
-                    '<div style="background:white;max-width:460px;width:100%;border-radius:16px;padding:34px 28px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">' +
-                        '<div style="font-size:52px;margin-bottom:14px;">📖</div>' +
-                        '<div style="font-size:22px;font-weight:800;color:#1f2937;margin-bottom:10px;">Preparing Chapter</div>' +
-                        '<div style="color:#6b7280;line-height:1.6;margin-bottom:4px;">Your secure chapter view is loading.</div>' +
-                        '<div style="color:#9ca3af;font-size:12px;line-height:1.5;">Large books may take a little longer to prepare.</div>' +
-                    '</div>';
-                document.body.appendChild(overlay);
-            }
-
-            function hidePreparingOverlay() {
-                var overlay = document.getElementById('dtl-preparing-chapter-overlay');
-                if (overlay) overlay.remove();
-            }
-
-            function failClosed(title, message) {
-                hidePreparingOverlay();
-                showErrorPage('🔐', title, message);
-                throw new Error('Access Denied: ' + title);
-            }
-
-            function getApp() {
-                return window.PDFViewerApplication || null;
-            }
-
-            function getViewerElement() {
-                return document.getElementById('viewer');
-            }
-
-            function scheduleRestrictPageElements() {
-                if (!isRestricted || validStart == null || validEnd == null) return;
-                if (restrictPagesTimer) return;
-                restrictPagesTimer = setTimeout(function() {
-                    restrictPagesTimer = null;
-                    restrictPageElements();
-                }, 0);
-            }
-
-            function restrictPageElements() {
-                if (!isRestricted || validStart == null || validEnd == null) return;
-
-                var viewer = getViewerElement();
-                if (!viewer) return;
-
-                var pages = viewer.querySelectorAll('.page[data-page-number]');
-                for (var i = 0; i < pages.length; i++) {
-                    var pageEl = pages[i];
-                    var pageNumber = parseInt(pageEl.getAttribute('data-page-number'), 10);
-                    if (!isFinite(pageNumber)) continue;
-
-                    var outsideChapter = pageNumber < validStart || pageNumber > validEnd;
-                    if (outsideChapter) {
-                        pageEl.setAttribute('aria-hidden', 'true');
-                        pageEl.setAttribute('data-dtl-hidden', '1');
-                        pageEl.style.display = 'none';
-                    } else {
-                        if (pageEl.getAttribute('data-dtl-hidden') === '1') {
-                            pageEl.removeAttribute('aria-hidden');
-                            pageEl.removeAttribute('data-dtl-hidden');
-                            pageEl.style.display = '';
-                        }
-                    }
-                }
-            }
-
-            function startPageElementObserver() {
-                var viewer = getViewerElement();
-                if (!viewer || !window.MutationObserver || mutationObserver) return;
-
-                mutationObserver = new MutationObserver(function() {
-                    scheduleRestrictPageElements();
-                });
-                mutationObserver.observe(viewer, {
-                    childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['data-page-number', 'class']
-                });
-            }
-
-            function updatePageDisplay(currentPage) {
-                if (isUserEditing || validStart == null || chapterLength == null) return;
-
-                var safePage = parseInt(currentPage, 10);
-                if (!isFinite(safePage)) safePage = validStart;
-                if (safePage < validStart) safePage = validStart;
-                if (safePage > validEnd) safePage = validEnd;
-
-                var relPage = safePage - validStart + 1;
-                if (pageInput) {
-                    pageInput.value = relPage;
-                    pageInput.max = chapterLength;
-                    pageInput.min = 1;
-                }
-                if (numPagesEl) numPagesEl.textContent = 'of ' + chapterLength;
-            }
-
-            function forcePage(pageNumber, delay) {
-                if (!app || validStart == null || validEnd == null) return;
-
-                var target = parseInt(pageNumber, 10);
-                if (!isFinite(target)) target = validStart;
-                if (target < validStart) target = validStart;
-                if (target > validEnd) target = validEnd;
-
-                setTimeout(function() {
-                    try { app.page = target; } catch (e) {}
+                    // Neuter easy extraction methods
                     try {
-                        if (app.pdfViewer) app.pdfViewer.currentPageNumber = target;
-                    } catch (e2) {}
-                    updatePageDisplay(target);
-                    scheduleRestrictPageElements();
-                }, delay || 0);
-            }
+                        pdfDoc.getData = function() { return Promise.reject(new Error('Access denied')); };
+                        pdfDoc.saveDocument = function() { return Promise.reject(new Error('Access denied')); };
+                    } catch (e) {}
 
-            function clampPage(pageNumber, reason, showCard) {
-                if (validStart == null || validEnd == null) return;
+                    // Only apply restrictions if we have chapter bounds
+                    if (!window.DTL_CHAPTER.isRestricted) {
+                        console.log('[DTL] No chapter restrictions - full PDF access');
+                        return;
+                    }
 
-                var page = parseInt(pageNumber, 10);
-                if (!isFinite(page)) return;
+                    var c = window.DTL_CHAPTER;
+                    var validStart = Math.max(1, Math.min(c.chapterStart, totalPages));
+                    var validEnd = Math.max(validStart, Math.min(c.chapterEnd, totalPages));
+                    c.chapterStart = validStart;
+                    c.chapterEnd = validEnd;
+                    var chapterLength = validEnd - validStart + 1;
 
-                if (page >= validStart && page <= validEnd) {
-                    firstValidNavigationSeen = true;
-                    updatePageDisplay(page);
-                    scheduleRestrictPageElements();
-                    return;
-                }
+                    // Jump to chapter start
+                    app.page = validStart;
 
-                // During initial PDF.js restoration, silently bring the viewer back
-                // to the chapter. After the first valid in-range page is seen, show
-                // the normal start/end card for user-initiated out-of-range movement.
-                var shouldShowCard = !!showCard && firstValidNavigationSeen;
+                    // Page display helpers
+                    var pageInput = document.getElementById('pageNumber');
+                    var numPagesEl = document.getElementById('numPages');
+                    var isUserEditing = false;
 
-                if (page < validStart) {
-                    console.log('[DTL] Blocking out-of-range page ' + page + ' before chapter start during ' + reason);
-                    forcePage(validStart, 0);
-                    if (shouldShowCard) showEndCard('start');
-                } else if (page > validEnd) {
-                    console.log('[DTL] Blocking out-of-range page ' + page + ' after chapter end during ' + reason);
-                    forcePage(validEnd, 0);
-                    if (shouldShowCard) showEndCard('end');
-                }
-            }
+                    if (pageInput) {
+                        pageInput.addEventListener('focus', function() { isUserEditing = true; });
+                        pageInput.addEventListener('blur', function() { isUserEditing = false; });
+                    }
 
-            function normalizeChapterBounds() {
-                if (!isRestricted) return false;
+                    var updatePageDisplay = function(currentPage) {
+                        if (isUserEditing) return;
+                        var relPage = currentPage - validStart + 1;
+                        if (pageInput) { pageInput.value = relPage; pageInput.max = chapterLength; pageInput.min = 1; }
+                        if (numPagesEl) numPagesEl.textContent = 'of ' + chapterLength;
+                    };
+                    updatePageDisplay(validStart);
 
-                var rawStart = parseInt(c.chapterStart, 10);
-                var rawEnd = parseInt(c.chapterEnd, 10);
-
-                if (!isFinite(rawStart) || !isFinite(rawEnd)) {
-                    failClosed('Invalid Chapter Token', 'This viewing link does not contain valid chapter page bounds. Please return to the chapter list and open the resource again.');
-                    return false;
-                }
-
-                validStart = Math.max(1, Math.min(rawStart, totalPages));
-                validEnd = Math.max(validStart, Math.min(rawEnd, totalPages));
-                chapterLength = validEnd - validStart + 1;
-
-                c.chapterStart = validStart;
-                c.chapterEnd = validEnd;
-                c.totalPages = totalPages;
-
-                if (chapterLength < 1) {
-                    failClosed('Invalid Chapter Range', 'This secure viewing link contains an invalid chapter range. Please return to the chapter list and open the resource again.');
-                    return false;
-                }
-
-                return true;
-            }
-
-            function wirePageInput() {
-                pageInput = document.getElementById('pageNumber');
-                numPagesEl = document.getElementById('numPages');
-
-                if (pageInput) {
-                    pageInput.addEventListener('focus', function() { isUserEditing = true; });
-                    pageInput.addEventListener('blur', function() {
-                        isUserEditing = false;
-                        updatePageDisplay(app && app.page ? app.page : validStart);
-                    });
-
-                    pageInput.addEventListener('change', function(e) {
-                        e.stopPropagation();
-                        var relPage = parseInt(this.value, 10);
-                        if (isNaN(relPage) || relPage < 1) {
-                            forcePage(validStart, 0);
-                        } else if (relPage > chapterLength) {
-                            forcePage(validEnd, 0);
-                            showEndCard('end');
-                        } else {
-                            forcePage(validStart + relPage - 1, 0);
-                        }
-                    }, true);
-                }
-            }
-
-            function wireToolbarBoundaryButtons() {
-                var firstPageButton = document.getElementById('firstPage');
-                var lastPageButton = document.getElementById('lastPage');
-
-                if (firstPageButton) {
-                    firstPageButton.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        forcePage(validStart, 0);
-                        showEndCard('start');
-                        return false;
-                    }, true);
-                }
-
-                if (lastPageButton) {
-                    lastPageButton.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        forcePage(validEnd, 0);
-                        showEndCard('end');
-                        return false;
-                    }, true);
-                }
-            }
-
-            function wireScrollGuard() {
-                var viewerContainer = document.getElementById('viewerContainer');
-                if (!viewerContainer) return;
-
-                var scrollTimer = null;
-                viewerContainer.addEventListener('scroll', function() {
-                    if (scrollTimer) return;
-                    scrollTimer = setTimeout(function() {
-                        scrollTimer = null;
-                        if (!app) return;
-                        clampPage(app.page, 'scroll', true);
-                        scheduleRestrictPageElements();
-                    }, 80);
-                }, true);
-            }
-
-            function neuterExtractionMethods(pdfDoc) {
-                try {
-                    pdfDoc.getData = function() { return Promise.reject(new Error('Access denied')); };
-                    pdfDoc.saveDocument = function() { return Promise.reject(new Error('Access denied')); };
-                } catch (e) {}
-            }
-
-            function armRestrictions(reason) {
-                if (restrictionArmed) return;
-
-                app = getApp();
-                if (!app || !app.pdfDocument || !app.eventBus) return;
-
-                totalPages = app.pdfDocument.numPages;
-                window.DTL_CHAPTER.totalPages = totalPages;
-                neuterExtractionMethods(app.pdfDocument);
-
-                if (!isRestricted) {
-                    console.log('[DTL] No chapter restrictions - full PDF access');
-                    hidePreparingOverlay();
-                    restrictionArmed = true;
-                    return;
-                }
-
-                if (!normalizeChapterBounds()) return;
-
-                restrictionArmed = true;
-                wirePageInput();
-                wireToolbarBoundaryButtons();
-                wireScrollGuard();
-                startPageElementObserver();
-
-                // Hide out-of-range pages before revealing the viewer. Repeat during
-                // the first few moments because PDF.js may create page elements after
-                // pdfDocument is available, especially for large documents.
-                restrictPageElements();
-                setTimeout(restrictPageElements, 50);
-                setTimeout(restrictPageElements, 250);
-                setTimeout(restrictPageElements, 1000);
-                setTimeout(restrictPageElements, 2500);
-                setTimeout(restrictPageElements, 5000);
-
-                if (app.eventBus) {
+                    // Navigation guard
+                    // On first load, pdf.js may override our app.page call
+                    // (e.g. restoring last viewed page). So we silently redirect
+                    // the first time without showing any card. Cards only appear
+                    // for subsequent (user-initiated) out-of-range navigation.
+                    var initialNav = true;
+                    
                     app.eventBus.on('pagechanging', function(evt) {
-                        clampPage(evt.pageNumber, 'pagechanging', true);
+                        var page = evt.pageNumber;
+                        
+                        if (page >= validStart && page <= validEnd) {
+                            // Page is in range — everything is fine
+                            initialNav = false;
+                            updatePageDisplay(page);
+                            return;
+                        }
+                        
+                        if (initialNav) {
+                            // First navigation is outside range — pdf.js overrode us.
+                            // Silently redirect to chapter start, no card.
+                            initialNav = false;
+                            console.log('[DTL] Initial page ' + page + ' outside chapter range — silently redirecting to ' + validStart);
+                            setTimeout(function() { app.page = validStart; updatePageDisplay(validStart); }, 50);
+                            return;
+                        }
+                        
+                        // User-initiated navigation outside range — show card
+                        if (page < validStart) {
+                            setTimeout(function() { app.page = validStart; updatePageDisplay(validStart); }, 0);
+                            showEndCard('start');
+                        } else if (page > validEnd) {
+                            setTimeout(function() { app.page = validEnd; updatePageDisplay(validEnd); }, 0);
+                            showEndCard('end');
+                        }
                     });
-                    app.eventBus.on('pagerendered', function() {
-                        scheduleRestrictPageElements();
-                    });
-                    app.eventBus.on('pagesloaded', function() {
-                        scheduleRestrictPageElements();
-                        forcePage(validStart, 0);
-                    });
-                    app.eventBus.on('pagesinit', function() {
-                        scheduleRestrictPageElements();
-                        forcePage(validStart, 0);
-                    });
+
+                    // Handle manual page input
+                    if (pageInput) {
+                        pageInput.addEventListener('change', function(e) {
+                            e.stopPropagation();
+                            var relPage = parseInt(this.value, 10);
+                            if (isNaN(relPage) || relPage < 1) {
+                                app.page = validStart;
+                            } else if (relPage > chapterLength) {
+                                app.page = validEnd;
+                                showEndCard('end');
+                            } else {
+                                app.page = validStart + relPage - 1;
+                            }
+                        }, true);
+                    }
+
+                    console.log('[DTL] Chapter restricted: pages ' + validStart + '-' + validEnd + ' (' + chapterLength + ' pages)');
                 }
-
-                forcePage(validStart, 0);
-                updatePageDisplay(validStart);
-                hidePreparingOverlay();
-
-                console.log('[DTL] Chapter restricted after ' + reason + ': pages ' + validStart + '-' + validEnd + ' (' + chapterLength + ' pages) out of ' + totalPages);
-            }
-
-            function attachEventBusWhenAvailable() {
-                var currentApp = getApp();
-                if (!currentApp || !currentApp.eventBus || busAttached) return;
-
-                busAttached = true;
-                currentApp.eventBus.on('documentloaded', function() { armRestrictions('documentloaded'); });
-                currentApp.eventBus.on('pagesinit', function() { armRestrictions('pagesinit'); });
-                currentApp.eventBus.on('pagesloaded', function() { armRestrictions('pagesloaded'); });
-            }
-
-            if (isRestricted) showPreparingOverlay();
-
-            // Use both eventBus hooks and polling. Polling stays active until the
-            // guard is armed, so slow/large PDFs do not fall through to full access.
-            var readyPoll = setInterval(function() {
-                attachEventBusWhenAvailable();
-                armRestrictions('poll');
-                if (restrictionArmed) clearInterval(readyPoll);
             }, 100);
+            
+            setTimeout(function() { clearInterval(checkReady); }, 30000);
         }
 
         enforceChapterRestrictions();
